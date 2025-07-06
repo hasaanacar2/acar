@@ -143,6 +143,7 @@
                         // Başlangıçta gri göster, analiz gelince güncellenecek
                         return {
                             color: '#888',
+                            fillColor: '#888',
                             weight: 2,
                             fillOpacity: 0.5
                         };
@@ -206,63 +207,142 @@
                 let analyzedCount = 0;
                 let cachedCount = 0;
                 
+                // Renk güncelleme fonksiyonu
+                function updateLayerStyle(layer, data) {
+                    if (data.fire_status === 'active') {
+                        layer.setStyle({ 
+                            color: 'red', 
+                            weight: 4, 
+                            dashArray: '5,5', 
+                            fillColor: 'red',
+                            fillOpacity: 0.7 
+                        });
+                    } else if (data.fire_spread_risk) {
+                        layer.setStyle({ 
+                            color: 'purple', 
+                            weight: 4, 
+                            dashArray: '2,8', 
+                            fillColor: 'purple',
+                            fillOpacity: 0.6 
+                        });
+                    } else {
+                        let renk = 'green';
+                        if (data.combined_risk_level === 'Yüksek') renk = 'red';
+                        else if (data.combined_risk_level === 'Orta') renk = 'orange';
+                        layer.setStyle({ 
+                            color: renk, 
+                            fillColor: renk,
+                            fillOpacity: 0.6,
+                            weight: 2
+                        });
+                    }
+                }
+
                 async function analyzeSequentially() {
+                    console.log("Analiz başlatılıyor...");
+                    
+                    // Önce cache'de olan tüm analizleri paralel olarak kontrol et
+                    const cachePromises = [];
                     for (let i = 0; i < features.length; i++) {
                         const layer = features[i];
                         const feature = layer.feature;
                         const props = feature.properties;
-                        try {
-                            const res = await fetch('/analyze_lm', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    centroid_lat: props.centroid_lat,
-                                    centroid_lon: props.centroid_lon,
-                                    area: props.area,
-                                    landuse: props.landuse,
-                                    name: props.name
-                                })
-                            });
+                        
+                        const promise = fetch('/analyze_lm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                centroid_lat: props.centroid_lat,
+                                centroid_lon: props.centroid_lon,
+                                area: props.area,
+                                landuse: props.landuse,
+                                name: props.name
+                            })
+                        }).then(async (res) => {
                             const data = await res.json();
-                            
-                            // Cache durumunu kontrol et (response header'dan)
                             const isCached = res.headers.get('X-Cache-Hit') === 'true';
+                            
                             if (isCached) {
                                 cachedCount++;
-                                console.log(`Cache hit: ${props.name || 'Alan'}`);
+                                console.log(`Cache hit: ${props.name || 'Alan'} - Hemen gösteriliyor`);
+                                // Cache'den gelen sonuçları hemen göster
+                                updateLayerStyle(layer, data);
+                                feature.properties._dynamic_risk = data;
                             } else {
+                                // Cache'de yoksa sırayla işle
+                                analyzedCount++;
+                                console.log(`Yeni analiz: ${props.name || 'Alan'} - Yeni analiz yapılıyor`);
+                                // Yeni analiz için bekleme
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                updateLayerStyle(layer, data);
+                                feature.properties._dynamic_risk = data;
+                            }
+                            
+                            return { layer, data, isCached };
+                        }).catch(err => {
+                            console.error(`Hata: ${props.name}`, err);
+                            layer.setStyle({ 
+                                color: '#888', 
+                                fillColor: '#888',
+                                weight: 2, 
+                                fillOpacity: 0.5 
+                            });
+                            return { layer, error: true };
+                        });
+                        
+                        cachePromises.push(promise);
+                    }
+                    
+                    // Tüm cache kontrollerini paralel olarak bekle
+                    await Promise.all(cachePromises);
+                    
+                    // Cache'de olmayan analizleri sırayla işle
+                    for (let i = 0; i < features.length; i++) {
+                        const layer = features[i];
+                        const feature = layer.feature;
+                        const props = feature.properties;
+                        
+                        // Eğer bu alan henüz analiz edilmemişse
+                        if (!feature.properties._dynamic_risk) {
+                            try {
+                                const res = await fetch('/analyze_lm', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        centroid_lat: props.centroid_lat,
+                                        centroid_lon: props.centroid_lon,
+                                        area: props.area,
+                                        landuse: props.landuse,
+                                        name: props.name
+                                    })
+                                });
+                                const data = await res.json();
+                                
                                 analyzedCount++;
                                 console.log(`Yeni analiz: ${props.name || 'Alan'}`);
+                                
+                                updateLayerStyle(layer, data);
+                                feature.properties._dynamic_risk = data;
+                                
+                                // Yeni analiz için bekleme
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                
+                            } catch (err) {
+                                console.error(`Hata: ${props.name}`, err);
+                                layer.setStyle({ 
+                                    color: '#888', 
+                                    fillColor: '#888',
+                                    weight: 2, 
+                                    fillOpacity: 0.5 
+                                });
                             }
-                            
-                            // Yangın ve yayılma durumu için özel renk/ikon
-                            if (data.fire_status === 'active') {
-                                layer.setStyle({ color: 'red', weight: 4, dashArray: '5,5', fillOpacity: 0.7 });
-                            } else if (data.fire_spread_risk) {
-                                layer.setStyle({ color: 'purple', weight: 4, dashArray: '2,8', fillOpacity: 0.6 });
-                            } else {
-                                let renk = 'green';
-                                if (data.combined_risk_level === 'Yüksek') renk = 'red';
-                                else if (data.combined_risk_level === 'Orta') renk = 'orange';
-                                layer.setStyle({ color: renk });
-                            }
-                            feature.properties._dynamic_risk = data;
-                            
-                            // Cache ve analiz durumunu güncelle
-                            updateCacheStatus();
-                            updateAnalysisStatus();
-                            
-                        } catch (err) {
-                            // Hata olursa alanı gri bırak
-                            layer.setStyle({ color: '#888', weight: 2, fillOpacity: 0.5 });
                         }
-                        // Her istek arasında 300ms bekle (cache sayesinde daha hızlı)
-                        await new Promise(resolve => setTimeout(resolve, 300));
                     }
                     
                     // Analiz tamamlandığında cache ve analiz durumunu güncelle
                     updateCacheStatus();
                     updateAnalysisStatus();
+                    console.log(`Analiz tamamlandı! ${analyzedCount} yeni, ${cachedCount} cache`);
                 }
                 analyzeSequentially();
             })
