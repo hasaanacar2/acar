@@ -62,10 +62,13 @@ git push -u origin main
 3. GitHub repository'nizi bağlayın
 4. **Environment Variables** ekleyin:
    - `WEATHERAPI_KEY`: WeatherAPI.com API anahtarı
-   - `GROQ_API_KEY`: Groq API anahtarı
+   - `GROQ_API_KEY`: Groq API anahtarı (LM analizi için gerekli)
 5. **Build Command**: `pip install -r requirements.txt`
 6. **Start Command**: `python app.py`
-7. **Deploy** edin!
+7. **Python Version**: 3.10.0
+8. **Deploy** edin!
+
+**Önemli**: LM analizi için GROQ_API_KEY zorunludur!
 
 ### 3. API Anahtarları
 

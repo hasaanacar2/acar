@@ -32,6 +32,13 @@ initial_analysis_status = {
 WEATHERAPI_KEY = os.environ.get('WEATHERAPI_KEY', "ca1b321f6c3948438c8181905250607")
 # Buraya API anahtarınızı ekleyin
 
+# Groq API kontrolü
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+if not GROQ_API_KEY:
+    print("⚠️ UYARI: GROQ_API_KEY bulunamadı! LM analizi dummy mod ile çalışacak.")
+else:
+    print("✅ GROQ_API_KEY bulundu. LM analizi aktif.")
+
 # Not: forsts.geojson dosyasını 'static' klasörüne koymalısınız.
 
 # Performans optimizasyonu için global değişkenler

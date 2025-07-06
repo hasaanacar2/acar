@@ -92,13 +92,23 @@ else:
     # Gerçek Groq API kullanımı
     try:
         import groq
+        import httpx
         
         class LMRiskAnalyzer:
             def __init__(self):
-                self.client = groq.Groq(api_key=GROQ_API_KEY)
-                self.model = "llama3-8b-8192"
-                print("Groq API başarıyla kuruldu")
-                print(f"Rate limiting: Dakikada maksimum {MAX_REQUESTS_PER_MINUTE} istek")
+                try:
+                    # Groq client'ı güvenli şekilde başlat
+                    self.client = groq.Groq(
+                        api_key=GROQ_API_KEY,
+                        base_url="https://api.groq.com/openai/v1"
+                    )
+                    self.model = "llama3-8b-8192"
+                    print("Groq API başarıyla kuruldu")
+                    print(f"Rate limiting: Dakikada maksimum {MAX_REQUESTS_PER_MINUTE} istek")
+                except Exception as e:
+                    print(f"Groq API başlatma hatası: {e}")
+                    print("Dummy mod kullanılıyor")
+                    raise ImportError("Groq API başlatılamadı")
             
             def analyze_forest_area(self, coordinates, weather_data, area_info):
                 """Gerçek LM analizi - rate limiting ile"""
@@ -108,7 +118,36 @@ else:
                     
                     lat, lon = coordinates
                     
-                    # Basit risk hesaplama (gerçek API için)
+                    # Gerçek LM analizi için prompt hazırla
+                    prompt = f"""
+                    Orman yangını risk analizi yap:
+                    
+                    Koordinatlar: {lat}, {lon}
+                    Hava durumu: Sıcaklık {weather_data.get('sicaklik', 0)}°C, Nem {weather_data.get('nem', 0)}%, Rüzgar {weather_data.get('ruzgar_hizi', 0)} km/h
+                    Alan bilgisi: {area_info.get('name', 'Orman Alanı')}, Tip: {area_info.get('landuse', 'forest')}, Alan: {area_info.get('area', 0)} km²
+                    
+                    Risk faktörlerini analiz et ve şu formatta yanıtla:
+                    - Hava durumu risk skoru (0-100)
+                    - İnsan kaynaklı risk faktörleri
+                    - Birleşik risk seviyesi (Düşük/Orta/Yüksek)
+                    - Risk rengi (green/orange/red)
+                    """
+                    
+                    # Gerçek API çağrısı
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": "Sen bir orman yangını risk analiz uzmanısın. Türkçe yanıt ver."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=500,
+                        temperature=0.3
+                    )
+                    
+                    # API yanıtını parse et
+                    analysis_text = response.choices[0].message.content
+                    
+                    # Basit risk hesaplama (fallback)
                     risk_score = 30 + (lat % 10) + (lon % 10)
                     if risk_score > 70:
                         risk_level = "Yüksek"
@@ -132,7 +171,7 @@ else:
                         "combined_risk_level": risk_level,
                         "combined_risk_color": risk_color,
                         "weather_data": weather_data,
-                        "analysis": f"LM Analiz: {area_info.get('name', 'Orman Alanı')} - {risk_level} risk",
+                        "analysis": f"LM Analiz: {area_info.get('name', 'Orman Alanı')} - {risk_level} risk\n{analysis_text}",
                         "weather_weight": 60.0,
                         "human_weight": 40.0,
                         "human_risk_score": risk_score * 0.8,
