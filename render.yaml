@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: orman-uyari-sistemi
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+      - key: WEATHERAPI_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false 

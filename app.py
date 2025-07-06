@@ -15,7 +15,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    print("python-dotenv bulunamadı, environment variables manuel olarak ayarlanmalı")
 
 app = Flask(__name__)
 
@@ -478,9 +478,10 @@ if __name__ == '__main__':
     print("✓ Analiz thread başlatıldı")
     
     try:
+        # Render için port ayarı
         port = int(os.environ.get('PORT', 5000))
         print(f"✓ Web sunucusu başlatılıyor: http://localhost:{port}")
-        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\n⚠️ Uygulama kapatılıyor...")
         auto_updater.stop() 
