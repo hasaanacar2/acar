@@ -45,6 +45,12 @@
     <div class="header">
         <h2>Orman Yangını Risk Haritası</h2>
         <p>Risk seviyelerine göre renklendirilmiş orman alanları</p>
+        <div id="cache-status" style="font-size: 12px; color: #666; margin-top: 5px;">
+            Cache durumu yükleniyor...
+        </div>
+        <div id="analysis-status" style="font-size: 12px; color: #666; margin-top: 2px;">
+            Analiz durumu kontrol ediliyor...
+        </div>
     </div>
     
     <div id="map"></div>
@@ -70,6 +76,56 @@
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
+        // Cache durumunu güncelle
+        async function updateCacheStatus() {
+            try {
+                const response = await fetch('/cache_stats');
+                const stats = await response.json();
+                const total = stats.total_entries;
+                const valid = stats.valid_entries;
+                const expired = stats.expired_entries;
+                
+                let statusText = `Cache: ${valid} geçerli`;
+                if (expired > 0) {
+                    statusText += `, ${expired} süresi dolmuş`;
+                }
+                if (total > 0) {
+                    const hitRate = Math.round((valid / total) * 100);
+                    statusText += ` (${hitRate}% hit rate)`;
+                }
+                
+                document.getElementById('cache-status').innerHTML = statusText;
+            } catch (error) {
+                document.getElementById('cache-status').innerHTML = 'Cache durumu alınamadı';
+            }
+        }
+
+        // Analiz durumunu güncelle
+        async function updateAnalysisStatus() {
+            try {
+                const response = await fetch('/analysis_status');
+                const status = await response.json();
+                const stats = status.cache_stats;
+                const analysis = status.initial_analysis;
+                
+                let statusText = `Sunucu çalışıyor`;
+                
+                if (analysis.running) {
+                    const progress = analysis.total_areas > 0 ? 
+                        Math.round((analysis.analyzed_count + analysis.cached_count) / analysis.total_areas * 100) : 0;
+                    statusText = `Başlangıç analizi: %${progress} (${analysis.analyzed_count + analysis.cached_count}/${analysis.total_areas})`;
+                } else if (analysis.completed) {
+                    statusText = `Analiz tamamlandı - ${stats.valid_entries} analiz hazır`;
+                } else if (stats.valid_entries > 0) {
+                    statusText += ` - ${stats.valid_entries} analiz hazır`;
+                }
+                
+                document.getElementById('analysis-status').innerHTML = statusText;
+            } catch (error) {
+                document.getElementById('analysis-status').innerHTML = 'Analiz durumu alınamadı';
+            }
+        }
+
         // Türkiye'nin merkez koordinatları
         var map = L.map('map').setView([39.0, 35.0], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -77,6 +133,16 @@
             attribution: '© OpenStreetMap katkıcıları'
         }).addTo(map);
 
+        // Cache ve analiz durumunu başlangıçta güncelle
+        updateCacheStatus();
+        updateAnalysisStatus();
+        
+        // Periyodik olarak durumu güncelle (her 5 saniyede)
+        setInterval(() => {
+            updateCacheStatus();
+            updateAnalysisStatus();
+        }, 5000);
+        
         // GeoJSON dosyasını yükle - risk verileri eklenmiş bölünmüş dosyayı kullan
         fetch('/static/export_with_risk_auto_20250706_220807.geojson')
             .then(response => {
@@ -151,6 +217,9 @@
                 }).addTo(map);
                 // --- Sıralı analiz fetch işlemi ---
                 const features = featureLayer.getLayers();
+                let analyzedCount = 0;
+                let cachedCount = 0;
+                
                 async function analyzeSequentially() {
                     for (let i = 0; i < features.length; i++) {
                         const layer = features[i];
@@ -169,6 +238,17 @@
                                 })
                             });
                             const data = await res.json();
+                            
+                            // Cache durumunu kontrol et (response header'dan)
+                            const isCached = res.headers.get('X-Cache-Hit') === 'true';
+                            if (isCached) {
+                                cachedCount++;
+                                console.log(`Cache hit: ${props.name || 'Alan'}`);
+                            } else {
+                                analyzedCount++;
+                                console.log(`Yeni analiz: ${props.name || 'Alan'}`);
+                            }
+                            
                             // Yangın ve yayılma durumu için özel renk/ikon
                             if (data.fire_status === 'active') {
                                 layer.setStyle({ color: 'red', weight: 4, dashArray: '5,5', fillOpacity: 0.7 });
@@ -181,13 +261,22 @@
                                 layer.setStyle({ color: renk });
                             }
                             feature.properties._dynamic_risk = data;
+                            
+                            // Cache ve analiz durumunu güncelle
+                            updateCacheStatus();
+                            updateAnalysisStatus();
+                            
                         } catch (err) {
                             // Hata olursa alanı gri bırak
                             layer.setStyle({ color: '#888', weight: 2, fillOpacity: 0.5 });
                         }
-                        // Her istek arasında 600ms bekle
-                        await new Promise(resolve => setTimeout(resolve, 600));
+                        // Her istek arasında 300ms bekle (cache sayesinde daha hızlı)
+                        await new Promise(resolve => setTimeout(resolve, 300));
                     }
+                    
+                    // Analiz tamamlandığında cache ve analiz durumunu güncelle
+                    updateCacheStatus();
+                    updateAnalysisStatus();
                 }
                 analyzeSequentially();
             })

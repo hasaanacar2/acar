@@ -4,8 +4,19 @@ from datetime import datetime, timedelta
 import os
 from auto_updater import auto_updater
 from lm_risk_analyzer import lm_analyzer
+from cache_manager import cache_manager
+import threading
 
 app = Flask(__name__)
+
+# Global analiz durumu
+initial_analysis_status = {
+    'running': False,
+    'completed': False,
+    'total_areas': 0,
+    'analyzed_count': 0,
+    'cached_count': 0
+}
 
 # WeatherAPI.com API anahtarı - gerçek uygulamada environment variable kullanın
 WEATHERAPI_KEY = "ca1b321f6c3948438c8181905250607"
@@ -176,6 +187,36 @@ def status():
         'last_update': auto_updater.last_update if hasattr(auto_updater, 'last_update') else None
     })
 
+@app.route('/cache_stats')
+def cache_stats():
+    """
+    Cache istatistiklerini döndürür
+    """
+    stats = cache_manager.get_cache_stats()
+    return jsonify(stats)
+
+@app.route('/clear_cache', methods=['POST'])
+def clear_cache():
+    """
+    Süresi dolmuş cache'leri temizler
+    """
+    cache_manager.clear_expired_cache()
+    return jsonify({'message': 'Cache temizlendi'})
+
+@app.route('/analysis_status')
+def analysis_status():
+    """
+    Başlangıç analizi durumunu döndürür
+    """
+    global initial_analysis_status
+    stats = cache_manager.get_cache_stats()
+    
+    return jsonify({
+        'cache_stats': stats,
+        'server_started': True,
+        'initial_analysis': initial_analysis_status
+    })
+
 @app.route('/analyze_lm', methods=['POST'])
 def analyze_lm():
     try:
@@ -185,6 +226,16 @@ def analyze_lm():
         area = float(data.get('area', 0))
         landuse = data.get('landuse', 'forest')
         name = data.get('name', 'Orman Alanı')
+
+        # Önce cache'den kontrol et
+        cached_result = cache_manager.get_cached_analysis(
+            centroid_lat, centroid_lon, area, landuse, name
+        )
+        
+        if cached_result:
+            response = jsonify(cached_result)
+            response.headers['X-Cache-Hit'] = 'true'
+            return response
 
         area_info = {
             'landuse': landuse,
@@ -203,13 +254,127 @@ def analyze_lm():
             weather_data,
             area_info
         )
+        
+        # Sonucu cache'e kaydet
+        cache_manager.cache_analysis(
+            centroid_lat, centroid_lon, area, landuse, name, combined_risk
+        )
+        
         return jsonify(combined_risk)
     except Exception as e:
         return jsonify({'hata': str(e)}), 400
 
+def initial_analysis():
+    """
+    Uygulama başladığında tüm alanları analiz eder
+    """
+    global initial_analysis_status
+    
+    try:
+        import json
+        import os
+        
+        # GeoJSON dosyasını yükle
+        geojson_path = 'static/export_improved.geojson'
+        if not os.path.exists(geojson_path):
+            print(f"GeoJSON dosyası bulunamadı: {geojson_path}")
+            return
+        
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+        
+        # Durumu güncelle
+        initial_analysis_status['running'] = True
+        initial_analysis_status['total_areas'] = len(geojson_data['features'])
+        initial_analysis_status['analyzed_count'] = 0
+        initial_analysis_status['cached_count'] = 0
+        
+        print(f"Başlangıç analizi başlatılıyor... {len(geojson_data['features'])} alan analiz edilecek")
+        
+        analyzed_count = 0
+        cached_count = 0
+        
+        for i, feature in enumerate(geojson_data['features']):
+            try:
+                properties = feature.get('properties', {})
+                centroid_lat = properties.get('centroid_lat')
+                centroid_lon = properties.get('centroid_lon')
+                area = properties.get('area', 0)
+                landuse = properties.get('landuse', 'forest')
+                name = properties.get('name', 'Orman Alanı')
+                
+                if centroid_lat is None or centroid_lon is None:
+                    continue
+                
+                # Cache'den kontrol et
+                cached_result = cache_manager.get_cached_analysis(
+                    centroid_lat, centroid_lon, area, landuse, name
+                )
+                
+                if cached_result:
+                    cached_count += 1
+                    initial_analysis_status['cached_count'] = cached_count
+                    if i % 10 == 0:
+                        print(f"Cache hit: {i+1}/{len(geojson_data['features'])} - {name}")
+                    continue
+                
+                # Hava durumu verisini çek
+                weather_data, error = get_weather_data_for_coordinates(centroid_lat, centroid_lon)
+                if error or weather_data is None:
+                    print(f"Hava durumu hatası: {error}")
+                    continue
+                
+                area_info = {
+                    'landuse': landuse,
+                    'area': area,
+                    'name': name
+                }
+                
+                # LM analizini çalıştır
+                combined_risk = lm_analyzer.analyze_forest_area(
+                    (centroid_lat, centroid_lon),
+                    weather_data,
+                    area_info
+                )
+                
+                # Sonucu cache'e kaydet
+                cache_manager.cache_analysis(
+                    centroid_lat, centroid_lon, area, landuse, name, combined_risk
+                )
+                
+                analyzed_count += 1
+                initial_analysis_status['analyzed_count'] = analyzed_count
+                
+                if i % 10 == 0:
+                    print(f"Analiz edildi: {i+1}/{len(geojson_data['features'])} - {name}")
+                
+                # API rate limit için bekle
+                import time
+                time.sleep(0.5)
+                
+            except Exception as e:
+                print(f"Analiz hatası (alan {i}): {str(e)}")
+                continue
+        
+        # Analiz tamamlandı
+        initial_analysis_status['running'] = False
+        initial_analysis_status['completed'] = True
+        
+        print(f"Başlangıç analizi tamamlandı! {analyzed_count} yeni analiz, {cached_count} cache hit")
+        
+    except Exception as e:
+        initial_analysis_status['running'] = False
+        print(f"Başlangıç analizi hatası: {str(e)}")
+
 if __name__ == '__main__':
     # Auto updater'ı başlat
     auto_updater.start()
+    
+    # Başlangıç analizini arka planda çalıştır
+    print("Başlangıç analizi başlatılıyor...")
+    analysis_thread = threading.Thread(target=initial_analysis, daemon=True)
+    analysis_thread.start()
+    
     try:
         # Production: debug=False, reloader kapalı
         app.run(debug=False, use_reloader=False)

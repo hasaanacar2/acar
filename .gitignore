@@ -1,0 +1,23 @@
+# Cache dosyaları
+analysis_cache.json
+*.cache
+
+# Log dosyaları
+*.log
+auto_updater.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+
+# IDE dosyaları
+.vscode/
+.idea/
+
+# OS dosyaları
+.DS_Store
+Thumbs.db 

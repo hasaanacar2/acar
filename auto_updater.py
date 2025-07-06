@@ -8,6 +8,7 @@ import os
 import logging
 import random
 from lm_risk_analyzer import lm_analyzer
+from cache_manager import cache_manager
 
 # Logging ayarları
 logging.basicConfig(
@@ -396,7 +397,8 @@ class AutoUpdater:
         schedule.every().day.at("00:00").do(self.update_forest_lm_risks)
         schedule.every().day.at("12:00").do(self.update_forest_lm_risks)
         schedule.every().day.at("12:00").do(self.update_forest_risks)
-        logging.info("Zamanlayıcı başlatıldı. Her gün saat 00:00 ve 12:00'de LM risk güncellemesi, 12:00'de klasik risk güncellemesi yapılacak.")
+        schedule.every().day.at("12:01").do(cache_manager.clear_expired_cache)  # Cache temizleme
+        logging.info("Zamanlayıcı başlatıldı. Her gün saat 00:00 ve 12:00'de LM risk güncellemesi, 12:00'de klasik risk güncellemesi, 12:01'de cache temizleme yapılacak.")
         while self.is_running:
             schedule.run_pending()
             time.sleep(60)
