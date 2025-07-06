@@ -2,6 +2,7 @@ Flask==2.3.3
 requests==2.31.0
 schedule==1.2.0
 shapely==2.0.2
-groq
-python-dotenv==1.1.1
+groq==0.4.2
+python-dotenv==1.0.0
 gunicorn==21.2.0
+gevent==23.9.1

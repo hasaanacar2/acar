@@ -26,6 +26,11 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             max-width: 300px;
             backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .header.minimized {
+            transform: translateY(-100%);
+            opacity: 0.3;
         }
         .header h2 {
             margin: 0 0 8px 0;
@@ -44,6 +49,22 @@
             margin-top: 8px;
             line-height: 1.3;
         }
+        .header-toggle {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #666;
+        }
         .legend {
             position: absolute;
             bottom: 20px;
@@ -55,6 +76,11 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             max-width: 200px;
             backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .legend.minimized {
+            transform: translateY(100%);
+            opacity: 0.3;
         }
         .legend h4 {
             margin: 0 0 10px 0;
@@ -79,6 +105,22 @@
             margin: 10px 0 0 0;
             color: #666;
             line-height: 1.3;
+        }
+        .legend-toggle {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #666;
         }
         .custom-popup .leaflet-popup-content-wrapper {
             background: rgba(255, 255, 255, 0.98);
@@ -187,54 +229,19 @@
                 left: 5px;
                 right: 5px;
                 max-width: none;
-                padding: 12px;
+                padding: 10px;
             }
             .header h2 {
-                font-size: 16px;
+                font-size: 14px;
             }
             .header p {
-                font-size: 13px;
+                font-size: 12px;
             }
             .legend {
                 bottom: 10px;
                 right: 10px;
                 left: 10px;
                 max-width: none;
-                padding: 12px;
-            }
-            .legend h4 {
-                font-size: 13px;
-            }
-            .legend-item {
-                font-size: 12px;
-            }
-            .popup-content {
-                max-width: 280px;
-                font-size: 13px;
-                padding: 12px;
-            }
-            .popup-title {
-                font-size: 15px;
-            }
-            .fire-warning {
-                font-size: 14px;
-            }
-            .spread-warning {
-                font-size: 13px;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .header {
-                padding: 10px;
-            }
-            .header h2 {
-                font-size: 15px;
-            }
-            .header p {
-                font-size: 12px;
-            }
-            .legend {
                 padding: 10px;
             }
             .legend h4 {
@@ -244,15 +251,78 @@
                 font-size: 11px;
             }
             .popup-content {
-                max-width: 250px;
+                max-width: 280px;
                 font-size: 12px;
                 padding: 10px;
+            }
+            .popup-title {
+                font-size: 14px;
+            }
+            .fire-warning {
+                font-size: 13px;
+            }
+            .spread-warning {
+                font-size: 12px;
+            }
+            .risk-section {
+                padding: 8px;
+                margin-bottom: 8px;
+            }
+            .weather-data {
+                padding: 6px;
+                font-size: 11px;
+            }
+            .lm-analysis {
+                padding: 8px;
+                font-size: 11px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header {
+                padding: 8px;
+            }
+            .header h2 {
+                font-size: 13px;
+            }
+            .header p {
+                font-size: 11px;
+            }
+            .legend {
+                padding: 8px;
+            }
+            .legend h4 {
+                font-size: 11px;
+            }
+            .legend-item {
+                font-size: 10px;
+            }
+            .popup-content {
+                max-width: 250px;
+                font-size: 11px;
+                padding: 8px;
+            }
+            .popup-title {
+                font-size: 13px;
+            }
+            .risk-section {
+                padding: 6px;
+                margin-bottom: 6px;
+            }
+            .weather-data {
+                padding: 4px;
+                font-size: 10px;
+            }
+            .lm-analysis {
+                padding: 6px;
+                font-size: 10px;
             }
         }
     </style>
 </head>
 <body>
     <div class="header">
+        <button class="header-toggle" onclick="toggleHeader()" title="Başlığı gizle/göster">−</button>
         <h2>🌲 Orman Yangını Risk Haritası</h2>
         <p>Yapay zeka destekli erken uyarı sistemi ile risk analizi</p>
         <div id="cache-status" class="status-info">
@@ -261,11 +331,15 @@
         <div id="analysis-status" class="status-info">
             Analiz durumu kontrol ediliyor...
         </div>
+        <div id="lm-analysis-status" class="status-info" style="display: none;">
+            🤖 LM Analizi: <span id="lm-status-text">Kontrol ediliyor...</span>
+        </div>
     </div>
     
     <div id="map"></div>
     
     <div class="legend">
+        <button class="legend-toggle" onclick="toggleLegend()" title="Açıklamayı gizle/göster">−</button>
         <h4>🎯 Risk Seviyeleri</h4>
         <div class="legend-item">
             <div class="legend-color" style="background-color: green;"></div>
@@ -288,6 +362,21 @@
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
+        // Header ve legend toggle fonksiyonları
+        function toggleHeader() {
+            const header = document.querySelector('.header');
+            const toggleBtn = document.querySelector('.header-toggle');
+            header.classList.toggle('minimized');
+            toggleBtn.textContent = header.classList.contains('minimized') ? '+' : '−';
+        }
+        
+        function toggleLegend() {
+            const legend = document.querySelector('.legend');
+            const toggleBtn = document.querySelector('.legend-toggle');
+            legend.classList.toggle('minimized');
+            toggleBtn.textContent = legend.classList.contains('minimized') ? '+' : '−';
+        }
+        
         // Cache durumunu güncelle
         async function updateCacheStatus() {
             try {
@@ -325,8 +414,32 @@
                 }
                 
                 document.getElementById('analysis-status').innerHTML = statusText;
+                
+                // LM analizi durumunu kontrol et
+                const lmStatus = status.lm_analysis_status;
+                const lmStatusDiv = document.getElementById('lm-analysis-status');
+                const lmStatusText = document.getElementById('lm-status-text');
+                
+                if (lmStatus) {
+                    lmStatusDiv.style.display = 'block';
+                    
+                    if (lmStatus.running) {
+                        lmStatusText.innerHTML = '🔄 Çalışıyor...';
+                        lmStatusText.style.color = '#ff9800';
+                    } else if (lmStatus.completed) {
+                        lmStatusText.innerHTML = '✅ Tamamlandı';
+                        lmStatusText.style.color = '#4caf50';
+                    } else {
+                        lmStatusText.innerHTML = '⏸️ Bekliyor';
+                        lmStatusText.style.color = '#666';
+                    }
+                } else {
+                    lmStatusDiv.style.display = 'none';
+                }
+                
             } catch (error) {
                 document.getElementById('analysis-status').innerHTML = '❌ Analiz durumu alınamadı';
+                document.getElementById('lm-analysis-status').style.display = 'none';
             }
         }
 
@@ -340,6 +453,10 @@
         // Cache ve analiz durumunu başlangıçta güncelle
         updateCacheStatus();
         updateAnalysisStatus();
+        
+        // Periyodik güncelleme (5 saniyede bir)
+        setInterval(updateCacheStatus, 5000);
+        setInterval(updateAnalysisStatus, 5000);
         
         // GeoJSON dosyasını yükle - risk verileri eklenmiş bölünmüş dosyayı kullan
         fetch('/static/export_with_risk_auto_20250706_220807.geojson')
@@ -427,6 +544,7 @@
                                         
                                         <div class="risk-section risk-human">
                                             <strong>👥 İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}
+                                            ${data.human_risk_explanation ? `<div style="font-size: 12px; color: #666; margin-top: 5px; font-style: italic;">${data.human_risk_explanation}</div>` : ''}
                                         </div>
                                         
                                         ${lmExplanation}
@@ -547,6 +665,7 @@
                                 
                                 <div class="risk-section risk-human">
                                     <strong>👥 İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}
+                                    ${data.human_risk_explanation ? `<div style="font-size: 12px; color: #666; margin-top: 5px; font-style: italic;">${data.human_risk_explanation}</div>` : ''}
                                 </div>
                                 
                                 ${lmExplanation}
@@ -558,6 +677,13 @@
                         `);
                         popup.update();
                     }
+                }
+
+                // Debounced analiz fonksiyonu
+                let analysisTimeout;
+                function debouncedAnalyze() {
+                    clearTimeout(analysisTimeout);
+                    analysisTimeout = setTimeout(analyzeSequentially, 100);
                 }
 
                 async function analyzeSequentially() {
@@ -595,7 +721,7 @@
                                 analyzedCount++;
                                 console.log(`Yeni analiz: ${props.name || 'Alan'} - Yeni analiz yapılıyor`);
                                 // Yeni analiz için bekleme
-                                await new Promise(resolve => setTimeout(resolve, 500));
+                                await new Promise(resolve => setTimeout(resolve, 200)); // Azaltıldı
                                 updateLayerStyle(layer, data);
                                 feature.properties._dynamic_risk = data;
                             }
@@ -647,7 +773,7 @@
                                 feature.properties._dynamic_risk = data;
                                 
                                 // Yeni analiz için bekleme
-                                await new Promise(resolve => setTimeout(resolve, 500));
+                                await new Promise(resolve => setTimeout(resolve, 200)); // Azaltıldı
                                 
                             } catch (err) {
                                 console.error(`Hata: ${props.name}`, err);
@@ -666,7 +792,9 @@
                     updateAnalysisStatus();
                     console.log(`Analiz tamamlandı! ${analyzedCount} yeni, ${cachedCount} cache`);
                 }
-                analyzeSequentially();
+                
+                // Analizi başlat
+                debouncedAnalyze();
             })
             .catch(error => {
                 // Sadece kullanıcıya sade bir hata mesajı göster

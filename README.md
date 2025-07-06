@@ -1,12 +1,12 @@
-# 🌲 Orman Erken Uyarı Sistemi
+# 🌲 Orman Yangını Erken Uyarı Sistemi
 
-Türkiye'deki orman alanlarının yangın riskini analiz eden ve gerçek zamanlı uyarı sistemi.
+Yapay zeka destekli orman yangını risk analizi ve erken uyarı sistemi.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-2.3.3-green.svg)](https://flask.palletsprojects.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## ✨ Özellikler
+## 🚀 Özellikler
 
 - 🚀 **Otomatik Başlangıç Analizi**: Uygulama başladığında tüm alanlar otomatik analiz edilir
 - 💾 **Akıllı Cache Sistemi**: Analiz sonuçları bir sonraki 12:00'a kadar cache'de tutulur
@@ -15,6 +15,31 @@ Türkiye'deki orman alanlarının yangın riskini analiz eden ve gerçek zamanl�
 - 🗺️ **İnteraktif Harita**: Leaflet.js ile modern harita arayüzü
 - 🤖 **AI Destekli Analiz**: Groq API ile gelişmiş risk analizi
 - 🌤️ **Hava Durumu Entegrasyonu**: WeatherAPI.com ile gerçek zamanlı hava verisi
+- 🛡️ **Rate Limiting**: API limitlerini aşmamak için akıllı istek yönetimi
+- **Gerçek zamanlı hava durumu** verileri (WeatherAPI.com)
+- **1 gün önceki 12:00 verisi** ile başlangıç analizi
+- **Yapay zeka destekli** risk analizi (Groq LM)
+- **Otomatik güncelleme** sistemi
+- **Cache yönetimi** ile performans optimizasyonu
+- **Paralel işlem** ile hızlı analiz
+- **Mobil uyumlu** web arayüzü
+- **Kapatılabilir kutucuklar** (header ve legend)
+- **Yangın noktası** entegrasyonu
+
+## 📅 Otomatik Güncelleme Zamanlaması
+
+Sistem her gün otomatik olarak güncellenir:
+
+- **12:00** - Klasik risk güncellemesi (hava durumu bazlı)
+- **13:00** - LM destekli risk güncellemesi (yapay zeka analizi)
+- **13:01** - Cache temizleme (süresi dolmuş veriler)
+
+### 🔄 Güncelleme Sırası
+
+1. **12:00** - Temel hava durumu risk analizi
+2. **13:00** - LM analizi başlar, cache güncellemeleri duraklar
+3. **LM Analizi Tamamlanır** - Yeni cache uygulanır
+4. **13:01** - Eski cache temizlenir
 
 ## 1. Gerekli Dosyalar
 - Tüm Python dosyaları (app.py, auto_updater.py, lm_risk_analyzer.py, cache_manager.py)
@@ -25,7 +50,7 @@ Türkiye'deki orman alanlarının yangın riskini analiz eden ve gerçek zamanl�
 ## 2. Environment Variables
 `env.example` dosyasını `.env` olarak kopyalayın ve API anahtarlarınızı girin:
 ```
-WEATHERAPI_KEY=your_weatherapi_key_here
+WEATHERAPI_KEY=your_weather_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
@@ -102,4 +127,92 @@ sudo systemctl start orman-uyari-sistemi
 ## 9. Sorun Giderme
 - API limiti hatası: Environment variables'ı kontrol edin
 - Cache sorunları: `/clear_cache` endpoint'ini kullanın
-- Analiz durumu: Konsol çıktısını kontrol edin 
+- Analiz durumu: Konsol çıktısını kontrol edin
+
+## 🌐 Kullanım
+
+1. Web tarayıcısında `http://localhost:5000` adresine gidin
+2. Harita üzerinde orman alanlarına tıklayın
+3. Detaylı risk analizi sonuçlarını görüntüleyin
+
+## 📊 Risk Seviyeleri
+
+- 🟢 **Düşük Risk** - Normal koşullar
+- 🟠 **Orta Risk** - Dikkatli olunmalı
+- 🔴 **Yüksek Risk** - Acil durum
+- 🟣 **Yayılma Riski** - Yangın yayılabilir
+
+## 🔧 Teknik Detaylar
+
+### Cache Sistemi
+
+- **LM analizi sırasında** cache güncellemeleri duraklar
+- **Analiz tamamlandıktan sonra** yeni cache uygulanır
+- **13:00'dan sonra** cache geçerliliği kontrol edilir
+
+### API Entegrasyonları
+
+- **WeatherAPI.com** - Hava durumu verileri (dakikada 50 istek limiti)
+- **Groq API** - Yapay zeka analizi (dakikada 90 istek limiti)
+- **OpenStreetMap** - Harita verileri
+
+### Rate Limiting
+
+- **WeatherAPI**: Dakikada maksimum 50 istek
+- **Groq API**: Dakikada maksimum 90 istek (100'ün altında güvenli marj)
+- **Akıllı bekleme**: Limit aşıldığında otomatik bekleme
+- **Thread-safe**: Çoklu işlem desteği
+
+## 📱 Mobil Uyumluluk
+
+- Responsive tasarım
+- Touch-friendly arayüz
+- Optimize edilmiş popup'lar
+- Mobil cihazlarda mükemmel performans
+
+## 🚀 Deployment
+
+### Render.com
+
+1. GitHub'a yükleyin
+2. Render.com'da yeni Web Service oluşturun
+3. Environment variables ekleyin
+4. Deploy edin
+
+### Diğer Platformlar
+
+- Heroku
+- Railway
+- DigitalOcean App Platform
+
+## 📝 Lisans
+
+MIT License
+
+## 🤝 Katkıda Bulunma
+
+1. Fork edin
+2. Feature branch oluşturun
+3. Commit edin
+4. Push edin
+5. Pull Request açın
+
+## ⚡ Performans Optimizasyonları
+
+### **Backend Optimizasyonları:**
+- **Paralel işlem** (ThreadPoolExecutor ile 4 worker)
+- **Hava durumu cache** (1 saat geçerli)
+- **Timeout azaltma** (10s → 5s)
+- **Sleep sürelerini azaltma** (500ms → 200ms)
+- **Threaded Flask** sunucusu
+
+### **Frontend Optimizasyonları:**
+- **Debounced analiz** (100ms gecikme)
+- **Periyodik güncelleme** (5 saniyede bir)
+- **Lazy loading** popup içerikleri
+- **Optimize edilmiş** mobil tasarım
+
+### **Cache Sistemi:**
+- **Çok seviyeli cache** (hava durumu + analiz)
+- **Akıllı cache temizleme**
+- **LM analizi sırasında** cache koruması 
