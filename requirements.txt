@@ -1,8 +1,7 @@
 Flask==2.3.3
 requests==2.31.0
 schedule==1.2.0
-google-generativeai==0.8.3
 shapely==2.0.2
 groq
-python-dotenv 
-gunicorn
+python-dotenv==1.1.1
+gunicorn==21.2.0

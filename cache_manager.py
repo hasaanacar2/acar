@@ -13,9 +13,10 @@ class CacheManager:
         try:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    print(f"DEBUG: Cache dosyası yüklendi: {self.cache_file}")
                     return json.load(f)
         except Exception as e:
-            logging.error(f"Cache yükleme hatası: {e}")
+            print(f"Cache yükleme hatası: {e}")
         return {}
     
     def save_cache(self):
@@ -23,8 +24,9 @@ class CacheManager:
         try:
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self.cache, f, ensure_ascii=False, indent=2)
+            print(f"DEBUG: Cache dosyası kaydedildi: {self.cache_file}")
         except Exception as e:
-            logging.error(f"Cache kaydetme hatası: {e}")
+            print(f"Cache kaydetme hatası: {e}")
     
     def get_cache_key(self, lat, lon, area, landuse, name):
         """Cache key oluştur"""
@@ -56,7 +58,7 @@ class CacheManager:
         if cache_key in self.cache:
             cache_entry = self.cache[cache_key]
             if self.is_cache_valid(cache_entry):
-                logging.info(f"Cache'den analiz sonucu alındı: {cache_key}")
+                print(f"DEBUG: Cache'den analiz sonucu alındı: {cache_key}")
                 return cache_entry['data']
         
         return None
@@ -72,7 +74,7 @@ class CacheManager:
         
         self.cache[cache_key] = cache_entry
         self.save_cache()
-        logging.info(f"Analiz sonucu cache'e kaydedildi: {cache_key}")
+        print(f"DEBUG: Analiz sonucu cache'e kaydedildi: {cache_key}")
     
     def clear_expired_cache(self):
         """Süresi dolmuş cache'leri temizle"""
@@ -86,7 +88,7 @@ class CacheManager:
         
         if expired_keys:
             self.save_cache()
-            logging.info(f"{len(expired_keys)} adet süresi dolmuş cache temizlendi")
+            print(f"{len(expired_keys)} adet süresi dolmuş cache temizlendi")
     
     def get_cache_stats(self):
         """Cache istatistiklerini döndür"""

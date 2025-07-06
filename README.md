@@ -1,11 +1,20 @@
-# Orman Erken Uyarı Sistemi - Production Kurulum Rehberi
+# 🌲 Orman Erken Uyarı Sistemi
 
-## Özellikler
+Türkiye'deki orman alanlarının yangın riskini analiz eden ve gerçek zamanlı uyarı sistemi.
+
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-2.3.3-green.svg)](https://flask.palletsprojects.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## ✨ Özellikler
+
 - 🚀 **Otomatik Başlangıç Analizi**: Uygulama başladığında tüm alanlar otomatik analiz edilir
 - 💾 **Akıllı Cache Sistemi**: Analiz sonuçları bir sonraki 12:00'a kadar cache'de tutulur
 - 🔄 **Otomatik Güncelleme**: Her gün 12:00'de analizler yenilenir
 - 📊 **Gerçek Zamanlı Durum**: Cache ve analiz durumu gerçek zamanlı gösterilir
 - 🗺️ **İnteraktif Harita**: Leaflet.js ile modern harita arayüzü
+- 🤖 **AI Destekli Analiz**: Groq API ile gelişmiş risk analizi
+- 🌤️ **Hava Durumu Entegrasyonu**: WeatherAPI.com ile gerçek zamanlı hava verisi
 
 ## 1. Gerekli Dosyalar
 - Tüm Python dosyaları (app.py, auto_updater.py, lm_risk_analyzer.py, cache_manager.py)

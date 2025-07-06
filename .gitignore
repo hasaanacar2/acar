@@ -24,4 +24,8 @@ __pycache__/
 Thumbs.db
 
 # Render specific
-.render-buildlogs/ 
+.render-buildlogs/
+
+# Geçici dosyalar
+*.tmp
+*.temp 

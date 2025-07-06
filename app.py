@@ -7,6 +7,13 @@ from lm_risk_analyzer import lm_analyzer
 from cache_manager import cache_manager
 import threading
 
+# Environment variables yükle
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 app = Flask(__name__)
 
 # Global analiz durumu
@@ -18,8 +25,8 @@ initial_analysis_status = {
     'cached_count': 0
 }
 
-# WeatherAPI.com API anahtarı - gerçek uygulamada environment variable kullanın
-WEATHERAPI_KEY = "ca1b321f6c3948438c8181905250607"
+# WeatherAPI.com API anahtarı - environment variable'dan al
+WEATHERAPI_KEY = os.environ.get('WEATHERAPI_KEY', "ca1b321f6c3948438c8181905250607")
 # Buraya API anahtarınızı ekleyin
 
 # Not: forsts.geojson dosyasını 'static' klasörüne koymalısınız.
@@ -265,35 +272,24 @@ def analyze_lm():
         return jsonify({'hata': str(e)}), 400
 
 def initial_analysis():
-    """
-    Uygulama başladığında tüm alanları analiz eder
-    """
+    print("DEBUG: Başlangıç analizi fonksiyonu çağrıldı")
     global initial_analysis_status
-    
     try:
         import json
         import os
-        
-        # GeoJSON dosyasını yükle
         geojson_path = 'static/export_improved.geojson'
         if not os.path.exists(geojson_path):
             print(f"GeoJSON dosyası bulunamadı: {geojson_path}")
             return
-        
         with open(geojson_path, 'r', encoding='utf-8') as f:
             geojson_data = json.load(f)
-        
-        # Durumu güncelle
         initial_analysis_status['running'] = True
         initial_analysis_status['total_areas'] = len(geojson_data['features'])
         initial_analysis_status['analyzed_count'] = 0
         initial_analysis_status['cached_count'] = 0
-        
         print(f"Başlangıç analizi başlatılıyor... {len(geojson_data['features'])} alan analiz edilecek")
-        
         analyzed_count = 0
         cached_count = 0
-        
         for i, feature in enumerate(geojson_data['features']):
             try:
                 properties = feature.get('properties', {})
@@ -302,82 +298,72 @@ def initial_analysis():
                 area = properties.get('area', 0)
                 landuse = properties.get('landuse', 'forest')
                 name = properties.get('name', 'Orman Alanı')
-                
                 if centroid_lat is None or centroid_lon is None:
                     continue
-                
-                # Cache'den kontrol et
                 cached_result = cache_manager.get_cached_analysis(
                     centroid_lat, centroid_lon, area, landuse, name
                 )
-                
                 if cached_result:
                     cached_count += 1
                     initial_analysis_status['cached_count'] = cached_count
                     if i % 10 == 0:
                         print(f"Cache hit: {i+1}/{len(geojson_data['features'])} - {name}")
                     continue
-                
-                # Hava durumu verisini çek
                 weather_data, error = get_weather_data_for_coordinates(centroid_lat, centroid_lon)
                 if error or weather_data is None:
                     print(f"Hava durumu hatası: {error}")
                     continue
-                
                 area_info = {
                     'landuse': landuse,
                     'area': area,
                     'name': name
                 }
-                
-                # LM analizini çalıştır
                 combined_risk = lm_analyzer.analyze_forest_area(
                     (centroid_lat, centroid_lon),
                     weather_data,
                     area_info
                 )
-                
-                # Sonucu cache'e kaydet
                 cache_manager.cache_analysis(
                     centroid_lat, centroid_lon, area, landuse, name, combined_risk
                 )
-                
                 analyzed_count += 1
                 initial_analysis_status['analyzed_count'] = analyzed_count
-                
                 if i % 10 == 0:
                     print(f"Analiz edildi: {i+1}/{len(geojson_data['features'])} - {name}")
-                
-                # API rate limit için bekle
                 import time
-                time.sleep(0.5)
-                
+                time.sleep(0.1)
             except Exception as e:
                 print(f"Analiz hatası (alan {i}): {str(e)}")
                 continue
-        
-        # Analiz tamamlandı
         initial_analysis_status['running'] = False
         initial_analysis_status['completed'] = True
-        
         print(f"Başlangıç analizi tamamlandı! {analyzed_count} yeni analiz, {cached_count} cache hit")
-        
     except Exception as e:
         initial_analysis_status['running'] = False
         print(f"Başlangıç analizi hatası: {str(e)}")
+    print("DEBUG: Başlangıç analizi fonksiyonu bitti")
 
 if __name__ == '__main__':
+    print("=== ORMAN ERKEN UYARI SİSTEMİ BAŞLATILIYOR ===")
+    
     # Auto updater'ı başlat
     auto_updater.start()
+    print("✓ Auto updater başlatıldı")
     
-    # Başlangıç analizini arka planda çalıştır
-    print("Başlangıç analizi başlatılıyor...")
+    # Başlangıç analizini garanti et
+    print("✓ Başlangıç analizi başlatılıyor...")
     analysis_thread = threading.Thread(target=initial_analysis, daemon=True)
     analysis_thread.start()
     
+    # Analiz başladığını doğrula
+    import time
+    time.sleep(1)  # 1 saniye bekle
+    print("✓ Analiz thread başlatıldı")
+    
     try:
-        # Production: debug=False, reloader kapalı
         port = int(os.environ.get('PORT', 5000))
+        print(f"✓ Web sunucusu başlatılıyor: http://localhost:{port}")
         app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
     except KeyboardInterrupt:
+        print("\n⚠️ Uygulama kapatılıyor...")
         auto_updater.stop() 
