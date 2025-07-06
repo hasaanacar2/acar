@@ -6,61 +6,259 @@
     <title>Orman Erken Uyarı Sistemi</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: Arial, sans-serif; }
-        #map { height: 100vh; width: 100%; }
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            overflow: hidden;
+        }
+        #map { 
+            height: 100vh; 
+            width: 100%; 
+        }
         .header { 
             position: absolute; 
             top: 10px; 
             left: 10px; 
             z-index: 1000; 
-            background: rgba(255,255,255,0.9); 
-            padding: 10px; 
-            border-radius: 5px; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            background: rgba(255,255,255,0.95); 
+            padding: 15px; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            max-width: 300px;
+            backdrop-filter: blur(10px);
+        }
+        .header h2 {
+            margin: 0 0 8px 0;
+            font-size: 18px;
+            color: #2c3e50;
+        }
+        .header p {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #555;
+            line-height: 1.4;
+        }
+        .status-info {
+            font-size: 12px; 
+            color: #666; 
+            margin-top: 8px;
+            line-height: 1.3;
         }
         .legend {
             position: absolute;
             bottom: 20px;
             right: 20px;
             z-index: 1000;
-            background: rgba(255,255,255,0.9);
+            background: rgba(255,255,255,0.95);
             padding: 15px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            max-width: 200px;
+            backdrop-filter: blur(10px);
+        }
+        .legend h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #2c3e50;
         }
         .legend-item {
             display: flex;
             align-items: center;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            font-size: 13px;
         }
         .legend-color {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             margin-right: 10px;
             border: 1px solid #333;
+            border-radius: 3px;
+        }
+        .legend p {
+            font-size: 11px;
+            margin: 10px 0 0 0;
+            color: #666;
+            line-height: 1.3;
         }
         .custom-popup .leaflet-popup-content-wrapper {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            border: 1px solid rgba(0,0,0,0.1);
         }
         .custom-popup .leaflet-popup-content {
             margin: 0;
             padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         .custom-popup .leaflet-popup-tip {
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(255, 255, 255, 0.98);
+        }
+        .popup-content {
+            padding: 15px;
+            max-width: 350px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .popup-title {
+            margin: 0 0 12px 0;
+            color: #2c3e50;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .risk-section {
+            margin-bottom: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 4px solid;
+        }
+        .risk-combined {
+            background-color: #f8f9fa;
+            border-left-color: #007bff;
+        }
+        .risk-weights {
+            background-color: #e3f2fd;
+            border-left-color: #2196f3;
+        }
+        .risk-weather {
+            background-color: #e8f5e8;
+            border-left-color: #4caf50;
+        }
+        .risk-human {
+            background-color: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        .risk-lm {
+            background-color: #f3e5f5;
+            border-left-color: #9c27b0;
+        }
+        .fire-warning {
+            color: #d32f2f;
+            font-weight: bold;
+            font-size: 15px;
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #ffebee;
+            border-radius: 5px;
+            border-left: 4px solid #d32f2f;
+        }
+        .spread-warning {
+            color: #7b1fa2;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #f3e5f5;
+            border-radius: 5px;
+            border-left: 4px solid #7b1fa2;
+        }
+        .risk-score {
+            font-weight: bold;
+            font-size: 15px;
+        }
+        .weather-data {
+            background-color: #e3f2fd;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+        .lm-analysis {
+            background-color: #fff8e1;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 13px;
+            line-height: 1.6;
+            border-left: 4px solid #ffc107;
+        }
+        .update-time {
+            font-size: 11px;
+            color: #666;
+            margin-top: 12px;
+            text-align: center;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
+        
+        /* Mobil uyumluluk */
+        @media (max-width: 768px) {
+            .header {
+                top: 5px;
+                left: 5px;
+                right: 5px;
+                max-width: none;
+                padding: 12px;
+            }
+            .header h2 {
+                font-size: 16px;
+            }
+            .header p {
+                font-size: 13px;
+            }
+            .legend {
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+                padding: 12px;
+            }
+            .legend h4 {
+                font-size: 13px;
+            }
+            .legend-item {
+                font-size: 12px;
+            }
+            .popup-content {
+                max-width: 280px;
+                font-size: 13px;
+                padding: 12px;
+            }
+            .popup-title {
+                font-size: 15px;
+            }
+            .fire-warning {
+                font-size: 14px;
+            }
+            .spread-warning {
+                font-size: 13px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header {
+                padding: 10px;
+            }
+            .header h2 {
+                font-size: 15px;
+            }
+            .header p {
+                font-size: 12px;
+            }
+            .legend {
+                padding: 10px;
+            }
+            .legend h4 {
+                font-size: 12px;
+            }
+            .legend-item {
+                font-size: 11px;
+            }
+            .popup-content {
+                max-width: 250px;
+                font-size: 12px;
+                padding: 10px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h2>Orman Yangını Risk Haritası</h2>
-        <p>Risk seviyelerine göre renklendirilmiş orman alanları</p>
-        <div id="cache-status" style="font-size: 12px; color: #666; margin-top: 5px;">
+        <h2>🌲 Orman Yangını Risk Haritası</h2>
+        <p>Yapay zeka destekli erken uyarı sistemi ile risk analizi</p>
+        <div id="cache-status" class="status-info">
             Cache durumu yükleniyor...
         </div>
-        <div id="analysis-status" style="font-size: 12px; color: #666; margin-top: 2px;">
+        <div id="analysis-status" class="status-info">
             Analiz durumu kontrol ediliyor...
         </div>
     </div>
@@ -68,7 +266,7 @@
     <div id="map"></div>
     
     <div class="legend">
-        <h4>Risk Seviyeleri</h4>
+        <h4>🎯 Risk Seviyeleri</h4>
         <div class="legend-item">
             <div class="legend-color" style="background-color: green;"></div>
             <span>Düşük Risk</span>
@@ -81,9 +279,11 @@
             <div class="legend-color" style="background-color: red;"></div>
             <span>Yüksek Risk</span>
         </div>
-        <p style="font-size: 12px; margin-top: 10px;">
-            Alanlara tıklayarak detaylı bilgi alabilirsiniz
-        </p>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: purple; border: 2px dashed #333;"></div>
+            <span>Yayılma Riski</span>
+        </div>
+        <p>📍 Alanlara dokunarak detaylı bilgi alabilirsiniz</p>
     </div>
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -97,7 +297,7 @@
                 const valid = stats.valid_entries;
                 const expired = stats.expired_entries;
                 
-                let statusText = `Cache: ${valid} geçerli`;
+                let statusText = `📊 Cache: ${valid} geçerli`;
                 if (expired > 0) {
                     statusText += `, ${expired} süresi dolmuş`;
                 }
@@ -108,7 +308,7 @@
                 
                 document.getElementById('cache-status').innerHTML = statusText;
             } catch (error) {
-                document.getElementById('cache-status').innerHTML = 'Cache durumu alınamadı';
+                document.getElementById('cache-status').innerHTML = '❌ Cache durumu alınamadı';
             }
         }
 
@@ -119,14 +319,14 @@
                 const status = await response.json();
                 const stats = status.cache_stats;
                 
-                let statusText = `Sunucu çalışıyor`;
+                let statusText = `🟢 Sunucu çalışıyor`;
                 if (stats.valid_entries > 0) {
                     statusText += ` - ${stats.valid_entries} analiz hazır`;
                 }
                 
                 document.getElementById('analysis-status').innerHTML = statusText;
             } catch (error) {
-                document.getElementById('analysis-status').innerHTML = 'Analiz durumu alınamadı';
+                document.getElementById('analysis-status').innerHTML = '❌ Analiz durumu alınamadı';
             }
         }
 
@@ -162,7 +362,7 @@
                     },
                     onEachFeature: function (feature, layer) {
                         // Başlangıç popup'ı oluştur
-                        layer.bindPopup('<div style="font-family: Arial;">Analiz yükleniyor...</div>', {
+                        layer.bindPopup('<div class="popup-content"><div style="text-align: center; color: #666;">📊 Analiz yükleniyor...</div></div>', {
                             maxWidth: 400,
                             className: 'custom-popup'
                         });
@@ -174,43 +374,65 @@
                                 const data = feature.properties._dynamic_risk;
                                 let fireWarn = '';
                                 if (data.fire_status === 'active') {
-                                    fireWarn = `<div style='color:red;font-weight:bold;font-size:16px;margin-bottom:8px;'>🔥 Bu alanda <u>aktif yangın</u> var!</div>`;
+                                    fireWarn = `<div class="fire-warning">🔥 Bu alanda <u>aktif yangın</u> var!</div>`;
                                 } else if (data.fire_spread_risk) {
-                                    fireWarn = `<div style='color:purple;font-weight:bold;font-size:15px;margin-bottom:8px;'>⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
+                                    fireWarn = `<div class="spread-warning">⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
                                 }
+                                
+                                // LM analiz sonucunu Türkçe açıklama ile birleştir
+                                let lmExplanation = '';
+                                if (data.analysis) {
+                                    lmExplanation = `
+                                        <div class="lm-analysis">
+                                            <strong>🤖 Yapay Zeka Analizi:</strong><br>
+                                            ${data.analysis}
+                                            <br><br>
+                                            <strong>📋 Analiz Açıklaması:</strong><br>
+                                            Bu analiz, hava durumu verileri, insan faktörleri ve coğrafi özellikler dikkate alınarak yapılmıştır. 
+                                            Yapay zeka modeli, geçmiş yangın verileri ve mevcut koşulları analiz ederek risk seviyesini belirlemiştir.
+                                        </div>
+                                    `;
+                                }
+                                
                                 popup.setContent(`
-                                    <div style="font-family: Arial, sans-serif; max-width: 350px;">
+                                    <div class="popup-content">
                                         ${fireWarn}
-                                        <h3 style="margin: 0 0 10px 0; color: #333;">${data.area_type || 'Orman Alanı'}</h3>
-                                        <div style="margin-bottom: 10px; padding: 8px; background-color: #f5f5f5; border-radius: 5px;">
-                                            <strong>Birleştirilmiş Risk:</strong> 
-                                            <span style="color: ${data.combined_risk_color}; font-weight: bold;">
+                                        <h3 class="popup-title">${data.area_type || 'Orman Alanı'}</h3>
+                                        
+                                        <div class="risk-section risk-combined">
+                                            <strong>🎯 Birleştirilmiş Risk:</strong> 
+                                            <span class="risk-score" style="color: ${data.combined_risk_color};">
                                                 ${data.combined_risk_level} (${data.combined_risk_score})
                                             </span>
                                         </div>
-                                        <div style="margin-bottom: 8px; padding: 5px; background-color: #f0f8ff; border-radius: 3px;">
-                                            <strong>Dinamik Ağırlıklar:</strong><br>
-                                            Hava Durumu: %${data.weather_weight}<br>
-                                            İnsan Faktörü: %${data.human_weight}<br>
-                                            En Yakın Şehir: ${data.nearest_city} (${data.distance_from_city} km)<br>
-                                            Alan Tipi: ${data.area_type}<br>
-                                            Alan Büyüklüğü: ${data.area_size}
+                                        
+                                        <div class="risk-section risk-weights">
+                                            <strong>⚖️ Dinamik Ağırlıklar:</strong><br>
+                                            🌤️ Hava Durumu: %${data.weather_weight}<br>
+                                            👥 İnsan Faktörü: %${data.human_weight}<br>
+                                            🏙️ En Yakın Şehir: ${data.nearest_city} (${data.distance_from_city} km)<br>
+                                            🏞️ Alan Tipi: ${data.area_type}<br>
+                                            📏 Alan Büyüklüğü: ${data.area_size}
                                         </div>
-                                        <div style="margin-bottom: 8px;"><strong>Hava Durumu Risk:</strong> ${data.weather_risk_score}</div>
-                                        <div style="margin-bottom: 8px;"><strong>İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}</div>
-                                        <div style="margin-bottom: 8px; padding: 5px; background-color: #e8f4fd; border-radius: 3px;">
-                                            <strong>Hava Durumu:</strong><br>
-                                            Sıcaklık: ${data.weather_data.sicaklik}°C<br>
-                                            Nem: ${data.weather_data.nem}%<br>
-                                            Rüzgar: ${data.weather_data.ruzgar_hizi} km/h<br>
-                                            Yağış: ${data.weather_data.yagis_7_gun} mm
+                                        
+                                        <div class="risk-section risk-weather">
+                                            <strong>🌤️ Hava Durumu Risk:</strong> ${data.weather_risk_score}
+                                            <div class="weather-data">
+                                                🌡️ Sıcaklık: ${data.weather_data.sicaklik}°C<br>
+                                                💧 Nem: ${data.weather_data.nem}%<br>
+                                                💨 Rüzgar: ${data.weather_data.ruzgar_hizi} km/h<br>
+                                                🌧️ Yağış: ${data.weather_data.yagis_7_gun} mm
+                                            </div>
                                         </div>
-                                        <div style="margin-bottom: 8px; padding: 5px; background-color: #fff3cd; border-radius: 3px; font-size: 12px;">
-                                            <strong>LM Analiz Sonucu:</strong><br>
-                                            ${data.analysis}
+                                        
+                                        <div class="risk-section risk-human">
+                                            <strong>👥 İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}
                                         </div>
-                                        <div style="font-size: 11px; color: #666; margin-top: 10px;">
-                                            Son güncelleme: ${new Date().toLocaleString()}
+                                        
+                                        ${lmExplanation}
+                                        
+                                        <div class="update-time">
+                                            🔄 Son güncelleme: ${new Date().toLocaleString('tr-TR')}
                                         </div>
                                     </div>
                                 `);
@@ -218,11 +440,11 @@
                             } else {
                                 // Analiz henüz yapılmamışsa
                                 popup.setContent(`
-                                    <div style="font-family: Arial, sans-serif; max-width: 350px;">
-                                        <h3 style="margin: 0 0 10px 0; color: #333;">${feature.properties.name || 'Orman Alanı'}</h3>
-                                        <div style="padding: 10px; background-color: #f0f0f0; border-radius: 5px; text-align: center;">
-                                            <div style="color: #666; font-size: 14px;">Analiz yapılıyor...</div>
-                                            <div style="margin-top: 5px; font-size: 12px; color: #999;">Bu alan için risk analizi henüz tamamlanmadı.</div>
+                                    <div class="popup-content">
+                                        <h3 class="popup-title">${feature.properties.name || 'Orman Alanı'}</h3>
+                                        <div style="padding: 15px; background-color: #f0f0f0; border-radius: 8px; text-align: center;">
+                                            <div style="color: #666; font-size: 14px;">⏳ Analiz yapılıyor...</div>
+                                            <div style="margin-top: 8px; font-size: 12px; color: #999;">Bu alan için risk analizi henüz tamamlanmadı.</div>
                                         </div>
                                     </div>
                                 `);
@@ -231,6 +453,7 @@
                         });
                     }
                 }).addTo(map);
+                
                 // --- Sıralı analiz fetch işlemi ---
                 const features = featureLayer.getLayers();
                 let analyzedCount = 0;
@@ -271,43 +494,65 @@
                     if (popup && popup.isOpen()) {
                         let fireWarn = '';
                         if (data.fire_status === 'active') {
-                            fireWarn = `<div style='color:red;font-weight:bold;font-size:16px;margin-bottom:8px;'>🔥 Bu alanda <u>aktif yangın</u> var!</div>`;
+                            fireWarn = `<div class="fire-warning">🔥 Bu alanda <u>aktif yangın</u> var!</div>`;
                         } else if (data.fire_spread_risk) {
-                            fireWarn = `<div style='color:purple;font-weight:bold;font-size:15px;margin-bottom:8px;'>⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
+                            fireWarn = `<div class="spread-warning">⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
                         }
+                        
+                        // LM analiz sonucunu Türkçe açıklama ile birleştir
+                        let lmExplanation = '';
+                        if (data.analysis) {
+                            lmExplanation = `
+                                <div class="lm-analysis">
+                                    <strong>🤖 Yapay Zeka Analizi:</strong><br>
+                                    ${data.analysis}
+                                    <br><br>
+                                    <strong>📋 Analiz Açıklaması:</strong><br>
+                                    Bu analiz, hava durumu verileri, insan faktörleri ve coğrafi özellikler dikkate alınarak yapılmıştır. 
+                                    Yapay zeka modeli, geçmiş yangın verileri ve mevcut koşulları analiz ederek risk seviyesini belirlemiştir.
+                                </div>
+                            `;
+                        }
+                        
                         popup.setContent(`
-                            <div style="font-family: Arial, sans-serif; max-width: 350px;">
+                            <div class="popup-content">
                                 ${fireWarn}
-                                <h3 style="margin: 0 0 10px 0; color: #333;">${data.area_type || 'Orman Alanı'}</h3>
-                                <div style="margin-bottom: 10px; padding: 8px; background-color: #f5f5f5; border-radius: 5px;">
-                                    <strong>Birleştirilmiş Risk:</strong> 
-                                    <span style="color: ${data.combined_risk_color}; font-weight: bold;">
+                                <h3 class="popup-title">${data.area_type || 'Orman Alanı'}</h3>
+                                
+                                <div class="risk-section risk-combined">
+                                    <strong>🎯 Birleştirilmiş Risk:</strong> 
+                                    <span class="risk-score" style="color: ${data.combined_risk_color};">
                                         ${data.combined_risk_level} (${data.combined_risk_score})
                                     </span>
                                 </div>
-                                <div style="margin-bottom: 8px; padding: 5px; background-color: #f0f8ff; border-radius: 3px;">
-                                    <strong>Dinamik Ağırlıklar:</strong><br>
-                                    Hava Durumu: %${data.weather_weight}<br>
-                                    İnsan Faktörü: %${data.human_weight}<br>
-                                    En Yakın Şehir: ${data.nearest_city} (${data.distance_from_city} km)<br>
-                                    Alan Tipi: ${data.area_type}<br>
-                                    Alan Büyüklüğü: ${data.area_size}
+                                
+                                <div class="risk-section risk-weights">
+                                    <strong>⚖️ Dinamik Ağırlıklar:</strong><br>
+                                    🌤️ Hava Durumu: %${data.weather_weight}<br>
+                                    👥 İnsan Faktörü: %${data.human_weight}<br>
+                                    🏙️ En Yakın Şehir: ${data.nearest_city} (${data.distance_from_city} km)<br>
+                                    🏞️ Alan Tipi: ${data.area_type}<br>
+                                    📏 Alan Büyüklüğü: ${data.area_size}
                                 </div>
-                                <div style="margin-bottom: 8px;"><strong>Hava Durumu Risk:</strong> ${data.weather_risk_score}</div>
-                                <div style="margin-bottom: 8px;"><strong>İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}</div>
-                                <div style="margin-bottom: 8px; padding: 5px; background-color: #e8f4fd; border-radius: 3px;">
-                                    <strong>Hava Durumu:</strong><br>
-                                    Sıcaklık: ${data.weather_data.sicaklik}°C<br>
-                                    Nem: ${data.weather_data.nem}%<br>
-                                    Rüzgar: ${data.weather_data.ruzgar_hizi} km/h<br>
-                                    Yağış: ${data.weather_data.yagis_7_gun} mm
+                                
+                                <div class="risk-section risk-weather">
+                                    <strong>🌤️ Hava Durumu Risk:</strong> ${data.weather_risk_score}
+                                    <div class="weather-data">
+                                        🌡️ Sıcaklık: ${data.weather_data.sicaklik}°C<br>
+                                        💧 Nem: ${data.weather_data.nem}%<br>
+                                        💨 Rüzgar: ${data.weather_data.ruzgar_hizi} km/h<br>
+                                        🌧️ Yağış: ${data.weather_data.yagis_7_gun} mm
+                                    </div>
                                 </div>
-                                <div style="margin-bottom: 8px; padding: 5px; background-color: #fff3cd; border-radius: 3px; font-size: 12px;">
-                                    <strong>LM Analiz Sonucu:</strong><br>
-                                    ${data.analysis}
+                                
+                                <div class="risk-section risk-human">
+                                    <strong>👥 İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}
                                 </div>
-                                <div style="font-size: 11px; color: #666; margin-top: 10px;">
-                                    Son güncelleme: ${new Date().toLocaleString()}
+                                
+                                ${lmExplanation}
+                                
+                                <div class="update-time">
+                                    🔄 Son güncelleme: ${new Date().toLocaleString('tr-TR')}
                                 </div>
                             </div>
                         `);
@@ -425,7 +670,7 @@
             })
             .catch(error => {
                 // Sadece kullanıcıya sade bir hata mesajı göster
-                document.body.innerHTML = '<div style="color:red;font-size:18px;text-align:center;margin-top:40px;">Harita verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.</div>';
+                document.body.innerHTML = '<div style="color:red;font-size:18px;text-align:center;margin-top:40px;padding:20px;">❌ Harita verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.</div>';
             });
     </script>
 </body>
