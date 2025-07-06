@@ -45,6 +45,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+auto_updater.log
 
 # Cache
 .cache/
@@ -53,6 +54,23 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+# Test files
+test_*.py
+*_test.py
+
+# Development files
+*.json
+!static/*.geojson
+!static/*.json
+
+# Build artifacts
+build.sh
+render.yaml
+
+# Local development
+.env.local
+.env.development
 
 # GeoJSON files (optional - remove if you want to track them)
 # static/*.geojson
