@@ -1,0 +1,197 @@
+{
+  "Merkez": {
+    "sicaklik": 28.3,
+    "nem": 62,
+    "ruzgar_hizi": 4.0,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.8969,
+      "lon": 30.7133
+    },
+    "sehir": "Antalya",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:30"
+  },
+  "Kemer": {
+    "sicaklik": 28.3,
+    "nem": 62,
+    "ruzgar_hizi": 7.2,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.5971,
+      "lon": 30.5605
+    },
+    "sehir": "Tekirova",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:30"
+  },
+  "Alanya": {
+    "sicaklik": 24.8,
+    "nem": 55,
+    "ruzgar_hizi": 3.6,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.5441,
+      "lon": 31.9997
+    },
+    "sehir": "Alanya",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:30"
+  },
+  "Manavgat": {
+    "sicaklik": 25.8,
+    "nem": 65,
+    "ruzgar_hizi": 15.1,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.7867,
+      "lon": 31.4433
+    },
+    "sehir": "Manavgat",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "Kaş": {
+    "sicaklik": 21.8,
+    "nem": 51,
+    "ruzgar_hizi": 10.8,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.2017,
+      "lon": 29.6386
+    },
+    "sehir": "Kemer",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:15"
+  },
+  "Finike": {
+    "sicaklik": 21.8,
+    "nem": 51,
+    "ruzgar_hizi": 10.8,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.2997,
+      "lon": 30.1453
+    },
+    "sehir": "Finike",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "Elmalı": {
+    "sicaklik": 20.4,
+    "nem": 36,
+    "ruzgar_hizi": 3.6,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.7408,
+      "lon": 29.9175
+    },
+    "sehir": "Elmali",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:15"
+  },
+  "Gündoğmuş": {
+    "sicaklik": 18.0,
+    "nem": 38,
+    "ruzgar_hizi": 11.2,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.8133,
+      "lon": 31.9983
+    },
+    "sehir": "Eksere",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "Akseki": {
+    "sicaklik": 18.0,
+    "nem": 38,
+    "ruzgar_hizi": 11.2,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 37.0483,
+      "lon": 31.7833
+    },
+    "sehir": "Akseki",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:15"
+  },
+  "Gazipaşa": {
+    "sicaklik": 26.9,
+    "nem": 68,
+    "ruzgar_hizi": 5.0,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.2667,
+      "lon": 32.3167
+    },
+    "sehir": "Pazarcik",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:30"
+  },
+  "Korkuteli": {
+    "sicaklik": 30.0,
+    "nem": 25,
+    "ruzgar_hizi": 3.6,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 37.0667,
+      "lon": 30.1833
+    },
+    "sehir": "Korkuteli",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "Serik": {
+    "sicaklik": 28.3,
+    "nem": 62,
+    "ruzgar_hizi": 11.2,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.9167,
+      "lon": 31.1
+    },
+    "sehir": "Serik",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "Kumluca": {
+    "sicaklik": 28.3,
+    "nem": 62,
+    "ruzgar_hizi": 7.2,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.3667,
+      "lon": 30.2833
+    },
+    "sehir": "Kumluca",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "Demre": {
+    "sicaklik": 21.8,
+    "nem": 51,
+    "ruzgar_hizi": 10.8,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 36.2333,
+      "lon": 29.9833
+    },
+    "sehir": "Finike",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  },
+  "İbradı": {
+    "sicaklik": 18.0,
+    "nem": 38,
+    "ruzgar_hizi": 11.2,
+    "yagis_7_gun": 0,
+    "koordinatlar": {
+      "lat": 37.1,
+      "lon": 31.6
+    },
+    "sehir": "Akseki",
+    "ulke": "Turkey",
+    "zaman": "2025-07-06 21:45"
+  }
+}
