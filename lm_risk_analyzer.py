@@ -114,32 +114,21 @@ else:
                         raise ImportError("Groq API başlatılamadı")
             
             def analyze_forest_area(self, coordinates, weather_data, area_info):
-                """Gerçek LM analizi - rate limiting ile"""
                 try:
-                    # Client'ı başlat
                     self._init_client()
-                    
-                    # Rate limit kontrolü
                     check_rate_limit()
-                    
                     lat, lon = coordinates
-                    
-                    # Gerçek LM analizi için prompt hazırla
                     prompt = f"""
                     Orman yangını risk analizi yap:
-                    
                     Koordinatlar: {lat}, {lon}
                     Hava durumu: Sıcaklık {weather_data.get('sicaklik', 0)}°C, Nem {weather_data.get('nem', 0)}%, Rüzgar {weather_data.get('ruzgar_hizi', 0)} km/h
                     Alan bilgisi: {area_info.get('name', 'Orman Alanı')}, Tip: {area_info.get('landuse', 'forest')}, Alan: {area_info.get('area', 0)} km²
-                    
                     Risk faktörlerini analiz et ve şu formatta yanıtla:
                     - Hava durumu risk skoru (0-100)
                     - İnsan kaynaklı risk faktörleri
                     - Birleşik risk seviyesi (Düşük/Orta/Yüksek)
                     - Risk rengi (green/orange/red)
                     """
-                    
-                    # Gerçek API çağrısı
                     if self.client is not None:
                         response = self.client.chat.completions.create(
                             model=self.model,
@@ -150,15 +139,9 @@ else:
                             max_tokens=500,
                             temperature=0.3
                         )
-                        
-                        # API yanıtını parse et
                         analysis_text = response.choices[0].message.content
                     else:
                         analysis_text = "API bağlantısı kurulamadı, dummy analiz kullanılıyor."
-                    
-                    # API yanıtı zaten parse edildi
-                    
-                    # Basit risk hesaplama (fallback)
                     risk_score = 30 + (lat % 10) + (lon % 10)
                     if risk_score > 70:
                         risk_level = "Yüksek"
@@ -169,14 +152,11 @@ else:
                     else:
                         risk_level = "Düşük"
                         risk_color = "green"
-                    
-                    # İnsan kaynaklı risk faktörleri
                     human_factors = [
                         {"factor": "Yerleşim yakınlığı", "score": 50, "description": "Orta seviye risk - şehir merkezine yakınlık"},
                         {"factor": "Turizm aktiviteleri", "score": 40, "description": "Düşük-orta risk - sezonluk aktiviteler"},
                         {"factor": "Yol ağı", "score": 60, "description": "Orta-yüksek risk - erişim kolaylığı"}
                     ]
-                    
                     return {
                         "combined_risk_score": risk_score,
                         "combined_risk_level": risk_level,
@@ -198,11 +178,8 @@ else:
                     }
                 except Exception as e:
                     print(f"LM analiz hatası: {e}")
-                    # Hata durumunda dummy analiz döndür
                     return self._dummy_analysis(coordinates, weather_data, area_info)
-            
             def _dummy_analysis(self, coordinates, weather_data, area_info):
-                """Dummy analiz (fallback)"""
                 lat, lon = coordinates
                 risk_score = 30 + (lat % 10) + (lon % 10)
                 if risk_score > 70:
@@ -214,13 +191,11 @@ else:
                 else:
                     risk_level = "Düşük"
                     risk_color = "green"
-                
                 human_factors = [
                     {"factor": "Yerleşim yakınlığı", "score": 50, "description": "Orta seviye risk - şehir merkezine yakınlık"},
                     {"factor": "Turizm aktiviteleri", "score": 40, "description": "Düşük-orta risk - sezonluk aktiviteler"},
                     {"factor": "Yol ağı", "score": 60, "description": "Orta-yüksek risk - erişim kolaylığı"}
                 ]
-                
                 return {
                     "combined_risk_score": risk_score,
                     "combined_risk_level": risk_level,
@@ -240,12 +215,9 @@ else:
                     "fire_status": "none",
                     "fire_spread_risk": False
                 }
-        
         lm_analyzer = LMRiskAnalyzer()
-        
     except ImportError:
         print("Groq modülü bulunamadı, dummy mod kullanılıyor")
-        # Dummy analyzer'ı tekrar kullan
         class DummyAnalyzerFallback:
             def analyze_forest_area(self, coordinates, weather_data, area_info):
                 risk_score = 30 + (coordinates[0] % 10) + (coordinates[1] % 10)
@@ -258,14 +230,11 @@ else:
                 else:
                     risk_level = "Düşük"
                     risk_color = "green"
-                
-                # İnsan kaynaklı risk faktörleri
                 human_factors = [
                     {"factor": "Yerleşim yakınlığı", "score": 50, "description": "Orta seviye risk - şehir merkezine yakınlık"},
                     {"factor": "Turizm aktiviteleri", "score": 40, "description": "Düşük-orta risk - sezonluk aktiviteler"},
                     {"factor": "Yol ağı", "score": 60, "description": "Orta-yüksek risk - erişim kolaylığı"}
                 ]
-                
                 return {
                     "combined_risk_score": risk_score,
                     "combined_risk_level": risk_level,
@@ -285,7 +254,6 @@ else:
                     "fire_status": "none",
                     "fire_spread_risk": False
                 }
-        
         lm_analyzer = DummyAnalyzerFallback()
 
 # Global LM analyzer instance

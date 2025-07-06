@@ -1,0 +1,33 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Test Orman Alanı 1",
+        "landuse": "forest",
+        "area": 1.5,
+        "centroid_lat": 36.8969,
+        "centroid_lon": 30.7133
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[30.7133, 36.8969], [30.7233, 36.8969], [30.7233, 36.9069], [30.7133, 36.9069], [30.7133, 36.8969]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Test Orman Alanı 2",
+        "landuse": "forest",
+        "area": 2.3,
+        "centroid_lat": 36.8869,
+        "centroid_lon": 30.7033
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[30.7033, 36.8869], [30.7133, 36.8869], [30.7133, 36.8969], [30.7033, 36.8969], [30.7033, 36.8869]]]
+      }
+    }
+  ]
+} 

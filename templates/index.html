@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orman Erken Uyarı Sistemi</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         body { 
@@ -362,6 +364,7 @@
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
+    document.addEventListener('DOMContentLoaded', function() {
         // Header ve legend toggle fonksiyonları
         function toggleHeader() {
             const header = document.querySelector('.header');
@@ -385,7 +388,6 @@
                 const total = stats.total_entries;
                 const valid = stats.valid_entries;
                 const expired = stats.expired_entries;
-                
                 let statusText = `📊 Cache: ${valid} geçerli`;
                 if (expired > 0) {
                     statusText += `, ${expired} süresi dolmuş`;
@@ -394,7 +396,6 @@
                     const hitRate = Math.round((valid / total) * 100);
                     statusText += ` (${hitRate}% hit rate)`;
                 }
-                
                 document.getElementById('cache-status').innerHTML = statusText;
             } catch (error) {
                 document.getElementById('cache-status').innerHTML = '❌ Cache durumu alınamadı';
@@ -407,22 +408,17 @@
                 const response = await fetch('/analysis_status');
                 const status = await response.json();
                 const stats = status.cache_stats;
-                
                 let statusText = `🟢 Sunucu çalışıyor`;
                 if (stats.valid_entries > 0) {
                     statusText += ` - ${stats.valid_entries} analiz hazır`;
                 }
-                
                 document.getElementById('analysis-status').innerHTML = statusText;
-                
                 // LM analizi durumunu kontrol et
                 const lmStatus = status.lm_analysis_status;
                 const lmStatusDiv = document.getElementById('lm-analysis-status');
                 const lmStatusText = document.getElementById('lm-status-text');
-                
                 if (lmStatus) {
                     lmStatusDiv.style.display = 'block';
-                    
                     if (lmStatus.running) {
                         lmStatusText.innerHTML = '🔄 Çalışıyor...';
                         lmStatusText.style.color = '#ff9800';
@@ -436,7 +432,6 @@
                 } else {
                     lmStatusDiv.style.display = 'none';
                 }
-                
             } catch (error) {
                 document.getElementById('analysis-status').innerHTML = '❌ Analiz durumu alınamadı';
                 document.getElementById('lm-analysis-status').style.display = 'none';
@@ -453,12 +448,11 @@
         // Cache ve analiz durumunu başlangıçta güncelle
         updateCacheStatus();
         updateAnalysisStatus();
-        
         // Periyodik güncelleme (5 saniyede bir)
         setInterval(updateCacheStatus, 5000);
         setInterval(updateAnalysisStatus, 5000);
-        
-        // GeoJSON dosyasını yükle - risk verileri eklenmiş bölünmüş dosyayı kullan
+
+        // GeoJSON dosyasını yükle
         fetch('/static/export_with_risk_auto_20250706_220807.geojson')
             .then(response => {
                 if (!response.ok) {
@@ -469,7 +463,6 @@
             .then(data => {
                 const featureLayer = L.geoJSON(data, {
                     style: function(feature) {
-                        // Başlangıçta gri göster, analiz gelince güncellenecek
                         return {
                             color: '#888',
                             fillColor: '#888',
@@ -478,13 +471,11 @@
                         };
                     },
                     onEachFeature: function (feature, layer) {
-                        // Başlangıç popup'ı oluştur
                         layer.bindPopup('<div class="popup-content"><div style="text-align: center; color: #666;">📊 Analiz yükleniyor...</div></div>', {
                             maxWidth: 400,
                             className: 'custom-popup'
                         });
                         
-                        // Popup açıldığında canlı analiz göster
                         layer.on('popupopen', function(e) {
                             const popup = layer.getPopup();
                             if (feature.properties._dynamic_risk) {
@@ -496,7 +487,6 @@
                                     fireWarn = `<div class="spread-warning">⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
                                 }
                                 
-                                // LM analiz sonucunu Türkçe açıklama ile birleştir
                                 let lmExplanation = '';
                                 if (data.analysis) {
                                     lmExplanation = `
@@ -556,7 +546,6 @@
                                 `);
                                 popup.update();
                             } else {
-                                // Analiz henüz yapılmamışsa
                                 popup.setContent(`
                                     <div class="popup-content">
                                         <h3 class="popup-title">${feature.properties.name || 'Orman Alanı'}</h3>
@@ -572,12 +561,10 @@
                     }
                 }).addTo(map);
                 
-                // --- Sıralı analiz fetch işlemi ---
                 const features = featureLayer.getLayers();
                 let analyzedCount = 0;
                 let cachedCount = 0;
                 
-                // Renk güncelleme fonksiyonu
                 function updateLayerStyle(layer, data) {
                     if (data.fire_status === 'active') {
                         layer.setStyle({ 
@@ -607,7 +594,6 @@
                         });
                     }
                     
-                    // Popup'ı da güncelle
                     const popup = layer.getPopup();
                     if (popup && popup.isOpen()) {
                         let fireWarn = '';
@@ -617,7 +603,6 @@
                             fireWarn = `<div class="spread-warning">⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
                         }
                         
-                        // LM analiz sonucunu Türkçe açıklama ile birleştir
                         let lmExplanation = '';
                         if (data.analysis) {
                             lmExplanation = `
@@ -679,17 +664,9 @@
                     }
                 }
 
-                // Debounced analiz fonksiyonu
-                let analysisTimeout;
-                function debouncedAnalyze() {
-                    clearTimeout(analysisTimeout);
-                    analysisTimeout = setTimeout(analyzeSequentially, 100);
-                }
-
                 async function analyzeSequentially() {
                     console.log("Analiz başlatılıyor...");
                     
-                    // Önce cache'de olan tüm analizleri paralel olarak kontrol et
                     const cachePromises = [];
                     for (let i = 0; i < features.length; i++) {
                         const layer = features[i];
@@ -713,15 +690,12 @@
                             if (isCached) {
                                 cachedCount++;
                                 console.log(`Cache hit: ${props.name || 'Alan'} - Hemen gösteriliyor`);
-                                // Cache'den gelen sonuçları hemen göster
                                 updateLayerStyle(layer, data);
                                 feature.properties._dynamic_risk = data;
                             } else {
-                                // Cache'de yoksa sırayla işle
                                 analyzedCount++;
                                 console.log(`Yeni analiz: ${props.name || 'Alan'} - Yeni analiz yapılıyor`);
-                                // Yeni analiz için bekleme
-                                await new Promise(resolve => setTimeout(resolve, 200)); // Azaltıldı
+                                await new Promise(resolve => setTimeout(resolve, 200));
                                 updateLayerStyle(layer, data);
                                 feature.properties._dynamic_risk = data;
                             }
@@ -741,16 +715,13 @@
                         cachePromises.push(promise);
                     }
                     
-                    // Tüm cache kontrollerini paralel olarak bekle
                     await Promise.all(cachePromises);
                     
-                    // Cache'de olmayan analizleri sırayla işle
                     for (let i = 0; i < features.length; i++) {
                         const layer = features[i];
                         const feature = layer.feature;
                         const props = feature.properties;
                         
-                        // Eğer bu alan henüz analiz edilmemişse
                         if (!feature.properties._dynamic_risk) {
                             try {
                                 const res = await fetch('/analyze_lm', {
@@ -765,15 +736,14 @@
                                     })
                                 });
                                 const data = await res.json();
-                                
+                                    
                                 analyzedCount++;
                                 console.log(`Yeni analiz: ${props.name || 'Alan'}`);
                                 
                                 updateLayerStyle(layer, data);
                                 feature.properties._dynamic_risk = data;
                                 
-                                // Yeni analiz için bekleme
-                                await new Promise(resolve => setTimeout(resolve, 200)); // Azaltıldı
+                                await new Promise(resolve => setTimeout(resolve, 200));
                                 
                             } catch (err) {
                                 console.error(`Hata: ${props.name}`, err);
@@ -786,20 +756,23 @@
                             }
                         }
                     }
-                    
-                    // Analiz tamamlandığında cache ve analiz durumunu güncelle
-                    updateCacheStatus();
-                    updateAnalysisStatus();
-                    console.log(`Analiz tamamlandı! ${analyzedCount} yeni, ${cachedCount} cache`);
                 }
                 
-                // Analizi başlat
-                debouncedAnalyze();
+                // Analiz başlat
+                setTimeout(() => {
+                    analyzeSequentially().then(() => {
+                        updateCacheStatus();
+                        updateAnalysisStatus();
+                        console.log(`Analiz tamamlandı! ${analyzedCount} yeni, ${cachedCount} cache`);
+                    }).catch(err => {
+                        console.error('Analiz hatası:', err);
+                    });
+                }, 100);
             })
             .catch(error => {
-                // Sadece kullanıcıya sade bir hata mesajı göster
                 document.body.innerHTML = '<div style="color:red;font-size:18px;text-align:center;margin-top:40px;padding:20px;">❌ Harita verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.</div>';
             });
+    });
     </script>
 </body>
 </html> 
