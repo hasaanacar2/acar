@@ -71,7 +71,23 @@ if not GROQ_API_KEY:
                 "combined_risk_level": risk_level,
                 "combined_risk_color": risk_color,
                 "weather_data": weather_data,
-                "analysis": f"Dummy analiz: {area_info.get('name', 'Orman Alanı')} - {risk_level} risk",
+                "analysis": f"""🤖 YAPAY ZEKA RİSK ANALİZİ
+
+📍 ALAN: {area_info.get('name', 'Orman Alanı')}
+🎯 RİSK SEVİYESİ: {risk_level} ({risk_score}/100)
+
+📊 ANA RİSK FAKTÖRLERİ:
+• Hava durumu: {weather_data.get('sicaklik', 0)}°C sıcaklık, {weather_data.get('nem', 0)}% nem
+• Coğrafi konum: {lat:.2f}, {lon:.2f} koordinatları
+• İnsan aktiviteleri: Yerleşim yakınlığı ve turizm
+• Orman tipi: {area_info.get('landuse', 'forest')} ({area_info.get('area', 0)} km²)
+
+💡 ÖNERİLER:
+• Düzenli hava durumu takibi yapılmalı
+• İnsan aktiviteleri kontrol edilmeli
+• Erken uyarı sistemleri kurulmalı
+
+⚠️ NOT: Bu analiz test modunda yapılmıştır. Gerçek API bağlantısı için GROQ_API_KEY gerekir.""",
                 "weather_weight": 60.0,
                 "human_weight": 40.0,
                 "human_risk_score": risk_score * 0.8,
@@ -120,14 +136,24 @@ else:
                     lat, lon = coordinates
                     prompt = f"""
                     Orman yangını risk analizi yap:
-                    Koordinatlar: {lat}, {lon}
-                    Hava durumu: Sıcaklık {weather_data.get('sicaklik', 0)}°C, Nem {weather_data.get('nem', 0)}%, Rüzgar {weather_data.get('ruzgar_hizi', 0)} km/h
-                    Alan bilgisi: {area_info.get('name', 'Orman Alanı')}, Tip: {area_info.get('landuse', 'forest')}, Alan: {area_info.get('area', 0)} km²
-                    Risk faktörlerini analiz et ve şu formatta yanıtla:
-                    - Hava durumu risk skoru (0-100)
-                    - İnsan kaynaklı risk faktörleri
-                    - Birleşik risk seviyesi (Düşük/Orta/Yüksek)
-                    - Risk rengi (green/orange/red)
+                    
+                    KOORDİNATLAR: {lat}, {lon}
+                    HAVA DURUMU: Sıcaklık {weather_data.get('sicaklik', 0)}°C, Nem {weather_data.get('nem', 0)}%, Rüzgar {weather_data.get('ruzgar_hizi', 0)} km/h
+                    ALAN BİLGİSİ: {area_info.get('name', 'Orman Alanı')}, Tip: {area_info.get('landuse', 'forest')}, Alan: {area_info.get('area', 0)} km²
+                    
+                    Bu alan için detaylı orman yangını risk analizi yap. Şu faktörleri değerlendir:
+                    1. Hava durumu koşulları (sıcaklık, nem, rüzgar)
+                    2. Coğrafi konum ve yükseklik
+                    3. İnsan aktiviteleri ve yerleşim yakınlığı
+                    4. Orman tipi ve yoğunluğu
+                    5. Erişim yolları ve turizm
+                    
+                    Analiz sonucunu şu formatta ver:
+                    - Risk seviyesi: Düşük/Orta/Yüksek
+                    - Risk skoru: 0-100 arası
+                    - Ana risk faktörleri (3-4 madde)
+                    - Öneriler (2-3 madde)
+                    - Renk kodu: green/orange/red
                     """
                     if self.client is not None:
                         response = self.client.chat.completions.create(

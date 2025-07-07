@@ -333,6 +333,9 @@
         <div id="analysis-status" class="status-info">
             Analiz durumu kontrol ediliyor...
         </div>
+        <div id="render-info" class="status-info" style="color: #ff9800; font-size: 10px;">
+            ⚠️ Sadece ilk 10 alan analiz ediliyor
+        </div>
         <div id="lm-analysis-status" class="status-info" style="display: none;">
             🤖 LM Analizi: <span id="lm-status-text">Kontrol ediliyor...</span>
         </div>
@@ -484,15 +487,24 @@
         }, 5000);
 
         // En güncel GeoJSON dosyasını al ve yükle
+        console.log('GeoJSON dosyası yükleniyor...');
         fetch('/get_latest_geojson')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Backend hatası: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 console.log(`GeoJSON dosyası yükleniyor: ${data.filename}`);
+                if (!data.url) {
+                    throw new Error('GeoJSON URL bulunamadı');
+                }
                 return fetch(data.url);
             })
             .then(response => {
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`GeoJSON dosyası hatası: ${response.status}`);
                 }
                 return response.json();
             })
@@ -529,10 +541,6 @@
                                         <div class="lm-analysis">
                                             <strong>🤖 Yapay Zeka Analizi:</strong><br>
                                             ${data.analysis}
-                                            <br><br>
-                                            <strong>📋 Analiz Açıklaması:</strong><br>
-                                            Bu analiz, hava durumu verileri, insan faktörleri ve coğrafi özellikler dikkate alınarak yapılmıştır. 
-                                            Yapay zeka modeli, geçmiş yangın verileri ve mevcut koşulları analiz ederek risk seviyesini belirlemiştir.
                                         </div>
                                     `;
                                 }
@@ -645,10 +653,6 @@
                                 <div class="lm-analysis">
                                     <strong>🤖 Yapay Zeka Analizi:</strong><br>
                                     ${data.analysis}
-                                    <br><br>
-                                    <strong>📋 Analiz Açıklaması:</strong><br>
-                                    Bu analiz, hava durumu verileri, insan faktörleri ve coğrafi özellikler dikkate alınarak yapılmıştır. 
-                                    Yapay zeka modeli, geçmiş yangın verileri ve mevcut koşulları analiz ederek risk seviyesini belirlemiştir.
                                 </div>
                             `;
                         }
@@ -703,95 +707,61 @@
                 async function analyzeSequentially() {
                     console.log("Analiz başlatılıyor...");
                     
-                    const cachePromises = [];
-                    for (let i = 0; i < features.length; i++) {
+                    // Sadece ilk 10 alanı analiz et (Render.com sınırlaması için)
+                    const maxAreas = Math.min(features.length, 10);
+                    console.log(`Render.com sınırlaması nedeniyle sadece ilk ${maxAreas} alan analiz edilecek`);
+                    
+                    for (let i = 0; i < maxAreas; i++) {
                         const layer = features[i];
                         const feature = layer.feature;
                         const props = feature.properties;
                         
-                        const promise = fetch('/analyze_lm', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                centroid_lat: props.centroid_lat,
-                                centroid_lon: props.centroid_lon,
-                                area: props.area,
-                                landuse: props.landuse,
-                                name: props.name
-                            })
-                        }).then(async (res) => {
+                        try {
+                            const res = await fetch('/analyze_lm', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    centroid_lat: props.centroid_lat,
+                                    centroid_lon: props.centroid_lon,
+                                    area: props.area,
+                                    landuse: props.landuse,
+                                    name: props.name
+                                })
+                            });
+                            
+                            if (!res.ok) {
+                                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                            }
+                            
                             const data = await res.json();
                             const isCached = res.headers.get('X-Cache-Hit') === 'true';
                             
                             if (isCached) {
                                 cachedCount++;
-                                console.log(`Cache hit: ${props.name || 'Alan'} - Hemen gösteriliyor`);
-                                updateLayerStyle(layer, data);
-                                feature.properties._dynamic_risk = data;
+                                console.log(`Cache hit: ${props.name || 'Alan'}`);
                             } else {
                                 analyzedCount++;
-                                console.log(`Yeni analiz: ${props.name || 'Alan'} - Yeni analiz yapılıyor`);
-                                await new Promise(resolve => setTimeout(resolve, 200));
-                                updateLayerStyle(layer, data);
-                                feature.properties._dynamic_risk = data;
+                                console.log(`Yeni analiz: ${props.name || 'Alan'}`);
                             }
                             
-                            return { layer, data, isCached };
-                        }).catch(err => {
-                            console.error(`Hata: ${props.name}`, err);
+                            updateLayerStyle(layer, data);
+                            feature.properties._dynamic_risk = data;
+                            
+                            // Her istek arasında 1 saniye bekle (rate limiting)
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            
+                        } catch (err) {
+                            console.error(`Hata: ${props.name || 'Alan'}`, err);
                             layer.setStyle({ 
                                 color: '#888', 
                                 fillColor: '#888',
                                 weight: 2, 
                                 fillOpacity: 0.5 
                             });
-                            return { layer, error: true };
-                        });
-                        
-                        cachePromises.push(promise);
-                    }
-                    
-                    await Promise.all(cachePromises);
-                    
-                    for (let i = 0; i < features.length; i++) {
-                        const layer = features[i];
-                        const feature = layer.feature;
-                        const props = feature.properties;
-                        
-                        if (!feature.properties._dynamic_risk) {
-                            try {
-                                const res = await fetch('/analyze_lm', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        centroid_lat: props.centroid_lat,
-                                        centroid_lon: props.centroid_lon,
-                                        area: props.area,
-                                        landuse: props.landuse,
-                                        name: props.name
-                                    })
-                                });
-                                const data = await res.json();
-                                    
-                                analyzedCount++;
-                                console.log(`Yeni analiz: ${props.name || 'Alan'}`);
-                                
-                                updateLayerStyle(layer, data);
-                                feature.properties._dynamic_risk = data;
-                                
-                                await new Promise(resolve => setTimeout(resolve, 200));
-                                
-                            } catch (err) {
-                                console.error(`Hata: ${props.name}`, err);
-                                layer.setStyle({ 
-                                    color: '#888', 
-                                    fillColor: '#888',
-                                    weight: 2, 
-                                    fillOpacity: 0.5 
-                                });
-                            }
                         }
                     }
+                    
+                    console.log(`Analiz tamamlandı: ${analyzedCount} yeni, ${cachedCount} cache`);
                 }
                 
                 // Analiz başlat
@@ -806,7 +776,21 @@
                 }, 100);
             })
             .catch(error => {
-                document.body.innerHTML = '<div style="color:red;font-size:18px;text-align:center;margin-top:40px;padding:20px;">❌ Harita verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.</div>';
+                console.error('Harita yükleme hatası:', error);
+                
+                // Daha detaylı hata mesajı
+                let errorMessage = '❌ Harita verileri yüklenemedi.';
+                if (error.message.includes('Backend hatası')) {
+                    errorMessage += '<br><br>🔧 Sunucu bağlantısı kurulamadı. Lütfen daha sonra tekrar deneyin.';
+                } else if (error.message.includes('GeoJSON dosyası hatası')) {
+                    errorMessage += '<br><br>📁 Harita dosyası bulunamadı. Lütfen daha sonra tekrar deneyin.';
+                } else if (error.message.includes('Network')) {
+                    errorMessage += '<br><br>🌐 İnternet bağlantısı sorunu. Lütfen bağlantınızı kontrol edin.';
+                } else {
+                    errorMessage += '<br><br>⚠️ Beklenmeyen bir hata oluştu. Lütfen daha sonra tekrar deneyin.';
+                }
+                
+                document.body.innerHTML = `<div style="color:red;font-size:18px;text-align:center;margin-top:40px;padding:20px;">${errorMessage}</div>`;
             });
     });
     </script>
