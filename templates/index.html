@@ -2,21 +2,61 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orman Erken Uyarı Sistemi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Orman Yangını Risk Haritası</title>
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
-    <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
         body { 
             margin: 0; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             overflow: hidden;
         }
+        
         #map { 
             height: 100vh; 
             width: 100%; 
         }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            flex-direction: column;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            margin-top: 20px;
+            color: #666;
+            font-size: 16px;
+        }
+        
         .header { 
             position: absolute; 
             top: 10px; 
@@ -25,32 +65,41 @@
             background: rgba(255,255,255,0.95); 
             padding: 15px; 
             border-radius: 8px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            max-width: 300px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 90%;
             backdrop-filter: blur(10px);
             transition: all 0.3s ease;
         }
+        
         .header.minimized {
-            transform: translateY(-100%);
-            opacity: 0.3;
+            padding: 8px;
+            background: rgba(255,255,255,0.8);
         }
+        
+        .header.minimized .header-content {
+            display: none;
+        }
+        
         .header h2 {
             margin: 0 0 8px 0;
             font-size: 18px;
             color: #2c3e50;
         }
+        
         .header p {
             margin: 0 0 10px 0;
             font-size: 14px;
             color: #555;
             line-height: 1.4;
         }
+        
         .status-info {
             font-size: 12px; 
             color: #666; 
             margin-top: 8px;
             line-height: 1.3;
         }
+        
         .header-toggle {
             position: absolute;
             top: 5px;
@@ -58,15 +107,16 @@
             background: rgba(0,0,0,0.1);
             border: none;
             border-radius: 50%;
-            width: 24px;
-            height: 24px;
+            width: 30px;
+            height: 30px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 16px;
             color: #666;
         }
+        
         .legend {
             position: absolute;
             bottom: 20px;
@@ -75,39 +125,50 @@
             background: rgba(255,255,255,0.95);
             padding: 15px;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             max-width: 200px;
             backdrop-filter: blur(10px);
             transition: all 0.3s ease;
         }
+        
         .legend.minimized {
-            transform: translateY(100%);
-            opacity: 0.3;
+            padding: 8px;
+            background: rgba(255,255,255,0.8);
         }
+        
+        .legend.minimized .legend-content {
+            display: none;
+        }
+        
         .legend h4 {
             margin: 0 0 10px 0;
             font-size: 14px;
             color: #2c3e50;
         }
+        
         .legend-item {
             display: flex;
             align-items: center;
             margin-bottom: 8px;
             font-size: 13px;
         }
+        
         .legend-color {
             width: 18px;
             height: 18px;
             margin-right: 10px;
             border: 1px solid #333;
             border-radius: 3px;
+            flex-shrink: 0;
         }
+        
         .legend p {
             font-size: 11px;
             margin: 10px 0 0 0;
             color: #666;
             line-height: 1.3;
         }
+        
         .legend-toggle {
             position: absolute;
             top: 5px;
@@ -115,97 +176,72 @@
             background: rgba(0,0,0,0.1);
             border: none;
             border-radius: 50%;
-            width: 24px;
-            height: 24px;
+            width: 30px;
+            height: 30px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 16px;
             color: #666;
         }
+        
         .custom-popup .leaflet-popup-content-wrapper {
             background: rgba(255, 255, 255, 0.98);
             border-radius: 10px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
             border: 1px solid rgba(0,0,0,0.1);
         }
+        
         .custom-popup .leaflet-popup-content {
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: inherit;
+            width: 100% !important;
         }
+        
         .custom-popup .leaflet-popup-tip {
             background: rgba(255, 255, 255, 0.98);
         }
+        
         .popup-content {
             padding: 15px;
             max-width: 350px;
             font-size: 14px;
             line-height: 1.5;
         }
+        
         .popup-title {
             margin: 0 0 12px 0;
             color: #2c3e50;
             font-size: 16px;
             font-weight: 600;
         }
+        
+        .risk-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
         .risk-section {
             margin-bottom: 12px;
             padding: 10px;
             border-radius: 6px;
-            border-left: 4px solid;
-        }
-        .risk-combined {
             background-color: #f8f9fa;
-            border-left-color: #007bff;
         }
-        .risk-weights {
-            background-color: #e3f2fd;
-            border-left-color: #2196f3;
-        }
-        .risk-weather {
-            background-color: #e8f5e8;
-            border-left-color: #4caf50;
-        }
-        .risk-human {
-            background-color: #fff3e0;
-            border-left-color: #ff9800;
-        }
-        .risk-lm {
-            background-color: #f3e5f5;
-            border-left-color: #9c27b0;
-        }
-        .fire-warning {
-            color: #d32f2f;
-            font-weight: bold;
-            font-size: 15px;
-            margin-bottom: 10px;
-            padding: 8px;
-            background-color: #ffebee;
-            border-radius: 5px;
-            border-left: 4px solid #d32f2f;
-        }
-        .spread-warning {
-            color: #7b1fa2;
-            font-weight: bold;
-            font-size: 14px;
-            margin-bottom: 10px;
-            padding: 8px;
-            background-color: #f3e5f5;
-            border-radius: 5px;
-            border-left: 4px solid #7b1fa2;
-        }
-        .risk-score {
-            font-weight: bold;
-            font-size: 15px;
-        }
+        
         .weather-data {
             background-color: #e3f2fd;
             padding: 8px;
             border-radius: 4px;
             margin-top: 8px;
+            font-size: 13px;
         }
+        
         .lm-analysis {
             background-color: #fff8e1;
             padding: 10px;
@@ -214,7 +250,10 @@
             font-size: 13px;
             line-height: 1.6;
             border-left: 4px solid #ffc107;
+            max-height: 200px;
+            overflow-y: auto;
         }
+        
         .update-time {
             font-size: 11px;
             color: #666;
@@ -224,689 +263,501 @@
             border-top: 1px solid #eee;
         }
         
-        /* Mobil uyumluluk */
+        .refresh-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: background 0.3s;
+        }
+        
+        .refresh-button:hover {
+            background: #2980b9;
+        }
+        
+        .refresh-button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+        
+        /* Tablet için responsive tasarım */
         @media (max-width: 768px) {
             .header {
                 top: 5px;
                 left: 5px;
-                right: 5px;
-                max-width: none;
-                padding: 10px;
+                max-width: calc(100% - 100px);
+                padding: 12px;
             }
+            
             .header h2 {
-                font-size: 14px;
+                font-size: 16px;
             }
+            
             .header p {
                 font-size: 12px;
             }
+            
             .legend {
                 bottom: 10px;
                 right: 10px;
-                left: 10px;
-                max-width: none;
-                padding: 10px;
+                max-width: 180px;
+                padding: 12px;
             }
-            .legend h4 {
-                font-size: 12px;
-            }
-            .legend-item {
-                font-size: 11px;
-            }
+            
             .popup-content {
-                max-width: 280px;
-                font-size: 12px;
-                padding: 10px;
-            }
-            .popup-title {
-                font-size: 14px;
-            }
-            .fire-warning {
+                max-width: 300px;
                 font-size: 13px;
+                padding: 12px;
             }
-            .spread-warning {
-                font-size: 12px;
-            }
-            .risk-section {
-                padding: 8px;
-                margin-bottom: 8px;
-            }
-            .weather-data {
-                padding: 6px;
-                font-size: 11px;
-            }
-            .lm-analysis {
-                padding: 8px;
-                font-size: 11px;
+            
+            .refresh-button {
+                padding: 8px 16px;
+                font-size: 13px;
             }
         }
         
+        /* Mobil için responsive tasarım */
         @media (max-width: 480px) {
             .header {
-                padding: 8px;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                max-width: 100%;
+                border-radius: 0 0 8px 8px;
+                padding: 10px;
             }
+            
             .header h2 {
-                font-size: 13px;
+                font-size: 14px;
+                margin-bottom: 5px;
             }
+            
             .header p {
                 font-size: 11px;
+                margin-bottom: 5px;
             }
-            .legend {
-                padding: 8px;
-            }
-            .legend h4 {
-                font-size: 11px;
-            }
-            .legend-item {
+            
+            .status-info {
                 font-size: 10px;
+                margin-top: 5px;
             }
+            
+            .refresh-button {
+                top: auto;
+                bottom: 10px;
+                right: 10px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+            
+            .legend {
+                position: fixed;
+                bottom: 60px;
+                left: 10px;
+                right: 10px;
+                width: auto;
+                max-width: 100%;
+                padding: 10px;
+            }
+            
+            .legend-content {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+            }
+            
+            .legend-item {
+                font-size: 11px;
+                margin-bottom: 5px;
+                flex: 0 0 calc(50% - 5px);
+            }
+            
             .popup-content {
                 max-width: 250px;
-                font-size: 11px;
-                padding: 8px;
+                font-size: 12px;
+                padding: 10px;
             }
-            .popup-title {
-                font-size: 13px;
+            
+            .leaflet-control-zoom {
+                margin-top: 60px !important;
             }
-            .risk-section {
-                padding: 6px;
-                margin-bottom: 6px;
+            
+            .leaflet-control-attribution {
+                display: none !important;
             }
-            .weather-data {
-                padding: 4px;
-                font-size: 10px;
+        }
+        
+        /* Touch cihazlar için optimizasyon */
+        @media (hover: none) and (pointer: coarse) {
+            .header-toggle, .legend-toggle {
+                width: 40px;
+                height: 40px;
+                font-size: 20px;
             }
-            .lm-analysis {
-                padding: 6px;
-                font-size: 10px;
+            
+            .refresh-button {
+                padding: 12px 20px;
+            }
+            
+            .leaflet-control-zoom a {
+                width: 36px !important;
+                height: 36px !important;
+                line-height: 36px !important;
+                font-size: 20px !important;
             }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <button class="header-toggle" onclick="toggleHeader()" title="Başlığı gizle/göster">−</button>
-        <h2>🌲 Orman Yangını Risk Haritası</h2>
-        <p>Yapay zeka destekli erken uyarı sistemi ile risk analizi</p>
-        <div id="cache-status" class="status-info">
-            Cache durumu yükleniyor...
-        </div>
-        <div id="analysis-status" class="status-info">
-            Analiz durumu kontrol ediliyor...
-        </div>
-        <div id="render-info" class="status-info" style="color: #ff9800; font-size: 10px;">
-            ⚠️ Akıllı analiz sistemi (hava durumu + localStorage)
-        </div>
-        <div id="weather-update-info" class="status-info" style="color: #2196f3; font-size: 10px; display: none;">
-            🔄 Yeni hava durumu verisi tespit edildi - Cache temizleniyor...
-        </div>
-        <div id="lm-analysis-status" class="status-info" style="display: none;">
-            🤖 LM Analizi: <span id="lm-status-text">Kontrol ediliyor...</span>
+    <div id="loading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Risk verileri yükleniyor...</div>
+    </div>
+    
+    <div class="header" id="header">
+        <button class="header-toggle" onclick="toggleHeader()" title="Başlığı gizle/göster">☰</button>
+        <div class="header-content">
+            <h2>🌲 Orman Yangını Risk Haritası</h2>
+            <p>Yapay zeka destekli erken uyarı sistemi</p>
+            <div id="analysis-status" class="status-info">
+                Durum kontrol ediliyor...
+            </div>
         </div>
     </div>
     
+    <button class="refresh-button" id="refreshBtn" onclick="refreshData()" title="Veriyi yenile">
+        🔄 Yenile
+    </button>
+    
     <div id="map"></div>
     
-    <div class="legend">
-        <button class="legend-toggle" onclick="toggleLegend()" title="Açıklamayı gizle/göster">−</button>
-        <h4>🎯 Risk Seviyeleri</h4>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: green;"></div>
-            <span>Düşük Risk</span>
+    <div class="legend" id="legend">
+        <button class="legend-toggle" onclick="toggleLegend()" title="Açıklamayı gizle/göster">☰</button>
+        <div class="legend-content">
+            <h4>🎯 Risk Seviyeleri</h4>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: green;"></div>
+                <span>Düşük Risk</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: lightgreen;"></div>
+                <span>Düşük-Orta</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: yellow;"></div>
+                <span>Orta Risk</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: orange;"></div>
+                <span>Orta-Yüksek</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: red;"></div>
+                <span>Yüksek Risk</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: darkred;"></div>
+                <span>Çok Yüksek</span>
+            </div>
+            <p>📍 Alanlara dokunarak detay görebilirsiniz</p>
         </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: lightgreen;"></div>
-            <span>Düşük-Orta Risk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: yellow;"></div>
-            <span>Orta Risk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: orange;"></div>
-            <span>Orta-Yüksek Risk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: red;"></div>
-            <span>Yüksek Risk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: darkred;"></div>
-            <span>Çok Yüksek Risk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: purple; border: 2px dashed #333;"></div>
-            <span>Yayılma Riski</span>
-        </div>
-        <p>📍 Alanlara dokunarak detaylı bilgi alabilirsiniz</p>
     </div>
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Header ve legend toggle fonksiyonları
+        // Global değişkenler
+        let map;
+        let featureLayer;
+        let currentData = null;
+        
+        // Toggle fonksiyonları
         function toggleHeader() {
-            const header = document.querySelector('.header');
-            const toggleBtn = document.querySelector('.header-toggle');
+            const header = document.getElementById('header');
             header.classList.toggle('minimized');
-            toggleBtn.textContent = header.classList.contains('minimized') ? '+' : '−';
         }
         
         function toggleLegend() {
-            const legend = document.querySelector('.legend');
-            const toggleBtn = document.querySelector('.legend-toggle');
+            const legend = document.getElementById('legend');
             legend.classList.toggle('minimized');
-            toggleBtn.textContent = legend.classList.contains('minimized') ? '+' : '−';
         }
         
-                        // Analiz durumunu localStorage'dan kontrol et
-                function getAnalysisStatus() {
-                    const status = localStorage.getItem('analysis_status');
-                    return status ? JSON.parse(status) : { 
-                        lastUpdate: null, 
-                        analyzedAreas: [],
-                        weatherDate: null,
-                        lastWeatherCheck: null
-                    };
-                }
-                
-                // Analiz durumunu localStorage'a kaydet
-                function saveAnalysisStatus(analyzedAreas, weatherDate = null) {
-                    const status = {
-                        lastUpdate: new Date().toISOString(),
-                        analyzedAreas: analyzedAreas,
-                        weatherDate: weatherDate,
-                        lastWeatherCheck: new Date().toISOString()
-                    };
-                    localStorage.setItem('analysis_status', JSON.stringify(status));
-                }
-                
-                // Hava durumu tarihini kontrol et
-                function checkWeatherDateChange(currentWeatherDate) {
-                    const status = getAnalysisStatus();
-                    const lastWeatherDate = status.weatherDate;
+        // Risk seviyesi renk fonksiyonu
+        function getRiskColor(riskLevel) {
+            const colors = {
+                'Düşük': 'green',
+                'Düşük-Orta': 'lightgreen',
+                'Orta': 'yellow',
+                'Orta-Yüksek': 'orange',
+                'Yüksek': 'red',
+                'Çok Yüksek': 'darkred'
+            };
+            return colors[riskLevel] || 'gray';
+        }
+        
+        // Risk seviyesi badge rengi
+        function getRiskBadgeStyle(riskLevel, riskColor) {
+            const isDark = ['red', 'darkred', 'orange'].includes(riskColor);
+            return `background-color: ${riskColor}; color: ${isDark ? 'white' : 'black'};`;
+        }
+        
+        // Popup içeriği oluşturma
+        function createPopupContent(properties) {
+            if (!properties || properties.analysis_failed) {
+                return '<div class="popup-content"><div style="text-align: center; color: #666;">❌ Bu alan için analiz yapılamadı</div></div>';
+            }
+            
+            // Temel bilgiler
+            const name = properties.name || 'Orman Alanı';
+            const riskLevel = properties.combined_risk_level || 'Bilinmiyor';
+            const riskScore = properties.combined_risk_score || 0;
+            const riskColor = properties.combined_risk_color || 'gray';
+            
+            // Hava durumu
+            const weather = properties.weather_data || {};
+            const temp = weather.sicaklik || 0;
+            const humidity = weather.nem || 0;
+            const wind = weather.ruzgar_hizi || 0;
+            const rain = weather.yagis_7_gun || 0;
+            
+            // LM analizi
+            const analysis = properties.analysis || '';
+            const analyzedAt = properties.analyzed_at ? new Date(properties.analyzed_at).toLocaleString('tr-TR') : 'Bilinmiyor';
+            
+            return `
+                <div class="popup-content">
+                    <h3 class="popup-title">${name}</h3>
                     
-                    if (lastWeatherDate !== currentWeatherDate) {
-                        console.log(`🔄 Hava durumu tarihi değişti: ${lastWeatherDate} -> ${currentWeatherDate}`);
-                        // localStorage'ı temizle
-                        localStorage.removeItem('analysis_status');
-                        return true; // Değişiklik var
-                    }
-                    return false; // Değişiklik yok
-                }
+                    <div class="risk-badge" style="${getRiskBadgeStyle(riskLevel, riskColor)}">
+                        ${riskLevel} Risk (${riskScore}/100)
+                    </div>
+                    
+                    <div class="weather-data">
+                        <strong>📊 Hava Durumu:</strong><br>
+                        🌡️ Sıcaklık: ${temp}°C<br>
+                        💧 Nem: %${humidity}<br>
+                        💨 Rüzgar: ${wind} km/h<br>
+                        🌧️ Yağış (7 gün): ${rain} mm
+                    </div>
+                    
+                    ${analysis ? `
+                        <div class="lm-analysis">
+                            <strong>🤖 Yapay Zeka Analizi:</strong><br>
+                            ${analysis}
+                        </div>
+                    ` : ''}
+                    
+                    <div class="update-time">
+                        Analiz zamanı: ${analyzedAt}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Analiz durumunu güncelle
+        async function updateAnalysisStatus() {
+            try {
+                const response = await fetch('/analysis_status');
+                const status = await response.json();
+                const statusElement = document.getElementById('analysis-status');
                 
-                // Cache durumunu güncelle
-                async function updateCacheStatus() {
-                    try {
-                        const cacheStatusElement = document.getElementById('cache-status');
-                        if (!cacheStatusElement) {
-                            console.warn('cache-status elementi bulunamadı');
-                            return;
-                        }
-                        
-                        const response = await fetch('/cache_stats');
-                        const stats = await response.json();
-                        const total = stats.total_entries;
-                        const valid = stats.valid_entries;
-                        const expired = stats.expired_entries;
-                let statusText = `📊 Cache: ${valid} geçerli`;
-                if (expired > 0) {
-                    statusText += `, ${expired} süresi dolmuş`;
+                if (status.analyzing) {
+                    statusElement.innerHTML = '🔄 Analiz devam ediyor...';
+                    statusElement.style.color = '#ff9800';
+                } else if (status.metadata) {
+                    const meta = status.metadata;
+                    statusElement.innerHTML = `✅ ${meta.analyzed_areas}/${meta.total_areas} alan analiz edildi`;
+                    statusElement.style.color = '#4caf50';
+                    
+                    if (meta.failed_analyses > 0) {
+                        statusElement.innerHTML += ` (${meta.failed_analyses} hata)`;
+                    }
+                } else {
+                    statusElement.innerHTML = '⏳ Analiz bekleniyor...';
+                    statusElement.style.color = '#666';
                 }
-                if (total > 0) {
-                    const hitRate = Math.round((valid / total) * 100);
-                    statusText += ` (${hitRate}% hit rate)`;
-                }
-                cacheStatusElement.innerHTML = statusText;
             } catch (error) {
-                const cacheStatusElement = document.getElementById('cache-status');
-                if (cacheStatusElement) {
-                    cacheStatusElement.innerHTML = '❌ Cache durumu alınamadı';
-                }
+                console.error('Durum güncelleme hatası:', error);
             }
         }
-
-                        // Analiz durumunu güncelle
-                async function updateAnalysisStatus() {
-                    try {
-                        const analysisStatusElement = document.getElementById('analysis-status');
-                        const lmStatusDiv = document.getElementById('lm-analysis-status');
-                        const lmStatusText = document.getElementById('lm-status-text');
-                        const weatherUpdateDiv = document.getElementById('weather-update-info');
-                        
-                        if (!analysisStatusElement) {
-                            console.warn('analysis-status elementi bulunamadı');
-                            return;
-                        }
-                        
-                        const response = await fetch('/analysis_status');
-                        const status = await response.json();
-                        const stats = status.cache_stats;
-                        
-                        // localStorage durumunu da kontrol et
-                        const localStatus = getAnalysisStatus();
-                        const localCount = localStatus.analyzedAreas ? localStatus.analyzedAreas.length : 0;
-                        const localWeatherDate = localStatus.weatherDate;
-                        
-                        let statusText = `🟢 Sunucu çalışıyor`;
-                        if (stats.valid_entries > 0) {
-                            statusText += ` - ${stats.valid_entries} analiz hazır`;
-                        }
-                        if (localCount > 0) {
-                            statusText += ` - ${localCount} localStorage`;
-                            if (localWeatherDate) {
-                                statusText += ` (${localWeatherDate})`;
-                            }
-                        }
-                        analysisStatusElement.innerHTML = statusText;
-                        
-                        // Hava durumu güncelleme durumunu kontrol et
-                        const weatherUpdate = status.weather_update;
-                        if (weatherUpdate && weatherUpdateDiv) {
-                            if (weatherUpdate.cache_cleared && weatherUpdate.last_weather_date) {
-                                weatherUpdateDiv.style.display = 'block';
-                                weatherUpdateDiv.innerHTML = `🔄 Yeni hava durumu verisi: ${weatherUpdate.last_weather_date} - Cache temizlendi`;
-                            } else {
-                                weatherUpdateDiv.style.display = 'none';
-                            }
-                        }
-                        
-                        // LM analizi durumunu kontrol et
-                        const lmStatus = status.lm_analysis_status;
-                        if (lmStatus && lmStatusDiv && lmStatusText) {
-                            lmStatusDiv.style.display = 'block';
-                            if (lmStatus.running) {
-                                lmStatusText.innerHTML = '🔄 Çalışıyor...';
-                                lmStatusText.style.color = '#ff9800';
-                            } else if (lmStatus.completed) {
-                                lmStatusText.innerHTML = '✅ Tamamlandı';
-                                lmStatusText.style.color = '#4caf50';
-                            } else {
-                                lmStatusText.innerHTML = '⏸️ Bekliyor';
-                                lmStatusText.style.color = '#666';
-                            }
-                        } else if (lmStatusDiv) {
-                            lmStatusDiv.style.display = 'none';
-                        }
-                    } catch (error) {
-                        const analysisStatusElement = document.getElementById('analysis-status');
-                        const lmStatusDiv = document.getElementById('lm-analysis-status');
-                        const weatherUpdateDiv = document.getElementById('weather-update-info');
-                        
-                        if (analysisStatusElement) {
-                            analysisStatusElement.innerHTML = '❌ Analiz durumu alınamadı';
-                        }
-                        if (lmStatusDiv) {
-                            lmStatusDiv.style.display = 'none';
-                        }
-                        if (weatherUpdateDiv) {
-                            weatherUpdateDiv.style.display = 'none';
-                        }
-                    }
-                }
-
-        // Türkiye'nin merkez koordinatları
-        var map = L.map('map').setView([39.0, 35.0], 6);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 18,
-            attribution: '© OpenStreetMap katkıcıları'
-        }).addTo(map);
-
-        // Cache ve analiz durumunu başlangıçta güncelle
-        setTimeout(() => {
-            updateCacheStatus();
-            updateAnalysisStatus();
-        }, 1000); // 1 saniye bekle
         
-        // Periyodik güncelleme (5 saniyede bir)
-        setInterval(() => {
-            updateCacheStatus();
-        }, 5000);
-        setInterval(() => {
-            updateAnalysisStatus();
-        }, 5000);
-
-        // En güncel GeoJSON dosyasını al ve yükle
-        console.log('GeoJSON dosyası yükleniyor...');
-        fetch('/get_latest_geojson')
-            .then(response => {
+        // Veriyi yükle
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'flex';
+                
+                const response = await fetch('/get_analyzed_data');
+                
+                if (response.status === 202) {
+                    // Analiz başlatıldı, bekle
+                    const data = await response.json();
+                    document.querySelector('.loading-text').textContent = data.message;
+                    
+                    // 5 saniye sonra tekrar dene
+                    setTimeout(() => loadData(), 5000);
+                    return;
+                }
+                
                 if (!response.ok) {
-                    throw new Error(`Backend hatası: ${response.status}`);
+                    throw new Error('Veri yükleme hatası');
                 }
-                return response.json();
-            })
-            .then(data => {
-                console.log(`GeoJSON dosyası yükleniyor: ${data.filename}`);
-                if (!data.url) {
-                    throw new Error('GeoJSON URL bulunamadı');
+                
+                const geoJsonData = await response.json();
+                currentData = geoJsonData;
+                
+                // Harita yoksa oluştur
+                if (!map) {
+                    initMap();
                 }
-                return fetch(data.url);
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`GeoJSON dosyası hatası: ${response.status}`);
+                
+                // Mevcut layer'ı temizle
+                if (featureLayer) {
+                    map.removeLayer(featureLayer);
                 }
-                return response.json();
-            })
-            .then(data => {
-                const featureLayer = L.geoJSON(data, {
+                
+                // Yeni layer ekle
+                featureLayer = L.geoJSON(geoJsonData, {
                     style: function(feature) {
+                        const props = feature.properties;
+                        const riskLevel = props.combined_risk_level || 'Bilinmiyor';
+                        const color = getRiskColor(riskLevel);
+                        
                         return {
-                            color: '#888',
-                            fillColor: '#888',
+                            color: color,
+                            fillColor: color,
                             weight: 2,
-                            fillOpacity: 0.5
+                            fillOpacity: 0.6
                         };
                     },
-                    onEachFeature: function (feature, layer) {
-                        layer.bindPopup('<div class="popup-content"><div style="text-align: center; color: #666;">📊 Analiz yükleniyor...</div></div>', {
+                    onEachFeature: function(feature, layer) {
+                        // Popup ekle
+                        const popupContent = createPopupContent(feature.properties);
+                        layer.bindPopup(popupContent, {
                             maxWidth: 400,
-                            className: 'custom-popup'
+                            className: 'custom-popup',
+                            autoPan: true,
+                            autoPanPadding: [50, 50]
                         });
                         
-                        layer.on('popupopen', function(e) {
-                            const popup = layer.getPopup();
-                            if (feature.properties._dynamic_risk) {
-                                const data = feature.properties._dynamic_risk;
-                                let fireWarn = '';
-                                if (data.fire_status === 'active') {
-                                    fireWarn = `<div class="fire-warning">🔥 Bu alanda <u>aktif yangın</u> var!</div>`;
-                                } else if (data.fire_spread_risk) {
-                                    fireWarn = `<div class="spread-warning">⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
-                                }
-                                
-                                let lmExplanation = '';
-                                if (data.analysis) {
-                                    lmExplanation = `
-                                        <div class="lm-analysis">
-                                            <strong>🤖 Yapay Zeka Analizi:</strong><br>
-                                            ${data.analysis}
-                                        </div>
-                                    `;
-                                }
-                                
-                                popup.setContent(`
-                                    <div class="popup-content">
-                                        ${fireWarn}
-                                        <h3 class="popup-title">${data.area_type || 'Orman Alanı'}</h3>
-                                        
-                                        <div class="risk-section risk-combined">
-                                            <strong>🎯 Birleştirilmiş Risk:</strong> 
-                                            <span class="risk-score" style="color: ${data.combined_risk_color};">
-                                                ${data.combined_risk_level} (${data.combined_risk_score})
-                                            </span>
-                                        </div>
-                                        
-                                        <div class="risk-section risk-weights">
-                                            <strong>⚖️ Dinamik Ağırlıklar:</strong><br>
-                                            🌤️ Hava Durumu: %${data.weather_weight}<br>
-                                            👥 İnsan Faktörü: %${data.human_weight}<br>
-                                            🏙️ En Yakın Şehir: ${data.nearest_city} (${data.distance_from_city} km)<br>
-                                            🏞️ Alan Tipi: ${data.area_type}<br>
-                                            📏 Alan Büyüklüğü: ${data.area_size}
-                                        </div>
-                                        
-                                        <div class="risk-section risk-weather">
-                                            <strong>🌤️ Hava Durumu Risk:</strong> ${data.weather_risk_score}
-                                            <div class="weather-data">
-                                                🌡️ Sıcaklık: ${data.weather_data.sicaklik}°C<br>
-                                                💧 Nem: ${data.weather_data.nem}%<br>
-                                                💨 Rüzgar: ${data.weather_data.ruzgar_hizi} km/h<br>
-                                                🌧️ Yağış: ${data.weather_data.yagis_7_gun} mm
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="risk-section risk-human">
-                                            <strong>👥 İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}
-                                            ${data.human_risk_explanation ? `<div style="font-size: 12px; color: #666; margin-top: 5px; font-style: italic;">${data.human_risk_explanation}</div>` : ''}
-                                        </div>
-                                        
-                                        ${lmExplanation}
-                                        
-                                        <div class="update-time">
-                                            🔄 Son güncelleme: ${new Date().toLocaleString('tr-TR')}
-                                        </div>
-                                    </div>
-                                `);
-                                popup.update();
-                            } else {
-                                popup.setContent(`
-                                    <div class="popup-content">
-                                        <h3 class="popup-title">${feature.properties.name || 'Orman Alanı'}</h3>
-                                        <div style="padding: 15px; background-color: #f0f0f0; border-radius: 8px; text-align: center;">
-                                            <div style="color: #666; font-size: 14px;">⏳ Analiz yapılıyor...</div>
-                                            <div style="margin-top: 8px; font-size: 12px; color: #999;">Bu alan için risk analizi henüz tamamlanmadı.</div>
-                                        </div>
-                                    </div>
-                                `);
-                                popup.update();
+                        // Hover efekti
+                        layer.on({
+                            mouseover: function(e) {
+                                const layer = e.target;
+                                layer.setStyle({
+                                    weight: 4,
+                                    fillOpacity: 0.8
+                                });
+                            },
+                            mouseout: function(e) {
+                                featureLayer.resetStyle(e.target);
                             }
                         });
                     }
                 }).addTo(map);
                 
-                const features = featureLayer.getLayers();
-                let analyzedCount = 0;
-                let cachedCount = 0;
-                
-                function updateLayerStyle(layer, data) {
-                    if (data.fire_status === 'active') {
-                        layer.setStyle({ 
-                            color: 'red', 
-                            weight: 4, 
-                            dashArray: '5,5', 
-                            fillColor: 'red',
-                            fillOpacity: 0.7 
-                        });
-                    } else if (data.fire_spread_risk) {
-                        layer.setStyle({ 
-                            color: 'purple', 
-                            weight: 4, 
-                            dashArray: '2,8', 
-                            fillColor: 'purple',
-                            fillOpacity: 0.6 
-                        });
-                    } else {
-                        let renk = 'green';
-                        if (data.combined_risk_level === 'Çok Yüksek') renk = 'darkred';
-                        else if (data.combined_risk_level === 'Yüksek') renk = 'red';
-                        else if (data.combined_risk_level === 'Orta-Yüksek') renk = 'orange';
-                        else if (data.combined_risk_level === 'Orta') renk = 'yellow';
-                        else if (data.combined_risk_level === 'Düşük-Orta') renk = 'lightgreen';
-                        else renk = 'green';
-                        layer.setStyle({ 
-                            color: renk, 
-                            fillColor: renk,
-                            fillOpacity: 0.6,
-                            weight: 2
-                        });
-                    }
-                    
-                    const popup = layer.getPopup();
-                    if (popup && popup.isOpen()) {
-                        let fireWarn = '';
-                        if (data.fire_status === 'active') {
-                            fireWarn = `<div class="fire-warning">🔥 Bu alanda <u>aktif yangın</u> var!</div>`;
-                        } else if (data.fire_spread_risk) {
-                            fireWarn = `<div class="spread-warning">⚠️ Bu alan <u>yangının yayılabileceği riskli bölgedir!</u></div>`;
-                        }
-                        
-                        let lmExplanation = '';
-                        if (data.analysis) {
-                            lmExplanation = `
-                                <div class="lm-analysis">
-                                    <strong>🤖 Yapay Zeka Analizi:</strong><br>
-                                    ${data.analysis}
-                                </div>
-                            `;
-                        }
-                        
-                        popup.setContent(`
-                            <div class="popup-content">
-                                ${fireWarn}
-                                <h3 class="popup-title">${data.area_type || 'Orman Alanı'}</h3>
-                                
-                                <div class="risk-section risk-combined">
-                                    <strong>🎯 Birleştirilmiş Risk:</strong> 
-                                    <span class="risk-score" style="color: ${data.combined_risk_color};">
-                                        ${data.combined_risk_level} (${data.combined_risk_score})
-                                    </span>
-                                </div>
-                                
-                                <div class="risk-section risk-weights">
-                                    <strong>⚖️ Dinamik Ağırlıklar:</strong><br>
-                                    🌤️ Hava Durumu: %${data.weather_weight}<br>
-                                    👥 İnsan Faktörü: %${data.human_weight}<br>
-                                    🏙️ En Yakın Şehir: ${data.nearest_city} (${data.distance_from_city} km)<br>
-                                    🏞️ Alan Tipi: ${data.area_type}<br>
-                                    📏 Alan Büyüklüğü: ${data.area_size}
-                                </div>
-                                
-                                <div class="risk-section risk-weather">
-                                    <strong>🌤️ Hava Durumu Risk:</strong> ${data.weather_risk_score}
-                                    <div class="weather-data">
-                                        🌡️ Sıcaklık: ${data.weather_data.sicaklik}°C<br>
-                                        💧 Nem: ${data.weather_data.nem}%<br>
-                                        💨 Rüzgar: ${data.weather_data.ruzgar_hizi} km/h<br>
-                                        🌧️ Yağış: ${data.weather_data.yagis_7_gun} mm
-                                    </div>
-                                </div>
-                                
-                                <div class="risk-section risk-human">
-                                    <strong>👥 İnsan Kaynaklı Risk:</strong> ${data.human_risk_score}
-                                    ${data.human_risk_explanation ? `<div style="font-size: 12px; color: #666; margin-top: 5px; font-style: italic;">${data.human_risk_explanation}</div>` : ''}
-                                </div>
-                                
-                                ${lmExplanation}
-                                
-                                <div class="update-time">
-                                    🔄 Son güncelleme: ${new Date().toLocaleString('tr-TR')}
-                                </div>
-                            </div>
-                        `);
-                        popup.update();
-                    }
-                }
-
-                async function loadAllAnalyses() {
-                    console.log("🔄 Backend'den tüm alanlar analiz ediliyor...");
-                    
-                    try {
-                        // Backend'den tüm analizleri iste
-                        const response = await fetch('/analyze_all_areas', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' }
-                        });
-                        
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                        }
-                        
-                        const result = await response.json();
-                        
-                        if (result.success) {
-                            console.log(`✅ ${result.analyzed_areas}/${result.total_areas} alan analiz edildi`);
-                            
-                            // Sonuçları haritaya uygula
-                            result.results.forEach(item => {
-                                const layer = features[item.index];
-                                if (layer) {
-                                    // Analiz verisini layer'a kaydet
-                                    layer.feature.properties._dynamic_risk = item.data;
-                                    
-                                    // Stili güncelle
-                                    updateLayerStyle(layer, item.data);
-                                    
-                                    // Popup'ı güncelle
-                                    updatePopupContent(layer, item.data);
-                                    
-                                    if (item.cached) {
-                                        console.log(`Cache hit: ${item.name}`);
-                                    } else {
-                                        console.log(`Yeni analiz: ${item.name}`);
-                                    }
-                                }
-                            });
-                            
-                            // localStorage'a kaydet
-                            const analyzedAreas = result.results.map(item => item.index);
-                            saveAnalysisStatus(analyzedAreas);
-                            console.log(`${analyzedAreas.length} alan localStorage'a kaydedildi`);
-                            
-                        } else {
-                            console.error("Backend analiz hatası:", result.error);
-                        }
-                        
-                    } catch (error) {
-                        console.error("Analiz yükleme hatası:", error);
-                    }
+                // Metadata'yı göster
+                if (geoJsonData.metadata) {
+                    console.log('Analiz bilgileri:', geoJsonData.metadata);
                 }
                 
-                // Popup içeriğini güncelle
-                function updatePopupContent(layer, data) {
-                    const props = layer.feature.properties;
-                    const riskLevel = data.combined_risk_level || 'Bilinmiyor';
-                    const riskScore = data.combined_risk_score || 0;
-                    const riskColor = data.combined_risk_color || 'gray';
-                    
-                    const popupContent = `
-                        <div class="popup-content">
-                            <h3 class="popup-title">${props.name || 'Orman Alanı'}</h3>
-                            <div class="risk-section risk-combined">
-                                <div class="risk-score" style="color: ${riskColor};">
-                                    🎯 Risk Seviyesi: ${riskLevel} (${riskScore}/100)
-                                </div>
-                            </div>
-                            <div class="weather-data">
-                                <strong>Hava Durumu:</strong><br>
-                                🌡️ Sıcaklık: ${data.weather_data?.sicaklik || 0}°C<br>
-                                💧 Nem: ${data.weather_data?.nem || 0}%<br>
-                                💨 Rüzgar: ${data.weather_data?.ruzgar_hizi || 0} km/h
-                            </div>
-                            <div class="lm-analysis">
-                                <strong>🤖 Yapay Zeka Analizi:</strong><br>
-                                ${data.analysis || 'Analiz mevcut değil'}
-                            </div>
-                            <div class="update-time">
-                                Son güncelleme: ${new Date().toLocaleString('tr-TR')}
-                            </div>
-                        </div>
-                    `;
-                    
-                    layer.bindPopup(popupContent, {
-                        maxWidth: 400,
-                        className: 'custom-popup'
-                    });
-                }
+                // Loading'i gizle
+                document.getElementById('loading').style.display = 'none';
                 
-                // Analiz başlat
-                setTimeout(() => {
-                    loadAllAnalyses().then(() => {
-                        updateCacheStatus();
-                        updateAnalysisStatus();
-                        console.log("✅ Tüm analizler tamamlandı!");
-                    }).catch(err => {
-                        console.error('Analiz hatası:', err);
-                    });
-                }, 100);
-            })
-            .catch(error => {
-                console.error('Harita yükleme hatası:', error);
+                // Durumu güncelle
+                updateAnalysisStatus();
                 
-                // Daha detaylı hata mesajı
-                let errorMessage = '❌ Harita verileri yüklenemedi.';
-                if (error.message.includes('Backend hatası')) {
-                    errorMessage += '<br><br>🔧 Sunucu bağlantısı kurulamadı. Lütfen daha sonra tekrar deneyin.';
-                } else if (error.message.includes('GeoJSON dosyası hatası')) {
-                    errorMessage += '<br><br>📁 Harita dosyası bulunamadı. Lütfen daha sonra tekrar deneyin.';
-                } else if (error.message.includes('Network')) {
-                    errorMessage += '<br><br>🌐 İnternet bağlantısı sorunu. Lütfen bağlantınızı kontrol edin.';
-                } else {
-                    errorMessage += '<br><br>⚠️ Beklenmeyen bir hata oluştu. Lütfen daha sonra tekrar deneyin.';
-                }
-                
-                document.body.innerHTML = `<div style="color:red;font-size:18px;text-align:center;margin-top:40px;padding:20px;">${errorMessage}</div>`;
+            } catch (error) {
+                console.error('Veri yükleme hatası:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div style="color: red; text-align: center; padding: 20px;">
+                        <h3>Veri yüklenemedi</h3>
+                        <p>${error.message}</p>
+                        <button onclick="location.reload()" style="margin-top: 10px; padding: 10px 20px;">Yeniden Dene</button>
+                    </div>
+                `;
+            }
+        }
+        
+        // Harita başlatma
+        function initMap() {
+            // Haritayı oluştur
+            map = L.map('map', {
+                center: [39.0, 35.0],
+                zoom: 6,
+                zoomControl: true,
+                attributionControl: true
             });
-    });
+            
+            // Tile layer ekle
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+            
+            // Mobil için özel ayarlar
+            if (L.Browser.mobile) {
+                map.options.zoomControl = false;
+                L.control.zoom({
+                    position: 'topright'
+                }).addTo(map);
+            }
+        }
+        
+        // Veriyi yenile
+        async function refreshData() {
+            const btn = document.getElementById('refreshBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Yükleniyor...';
+            
+            try {
+                await loadData();
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Yenile';
+            }
+        }
+        
+        // Sayfa yüklendiğinde
+        document.addEventListener('DOMContentLoaded', function() {
+            // Veriyi yükle
+            loadData();
+            
+            // Durum güncellemesini başlat
+            setInterval(updateAnalysisStatus, 10000); // 10 saniyede bir
+            
+            // Window resize eventi
+            let resizeTimeout;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(function() {
+                    if (map) {
+                        map.invalidateSize();
+                    }
+                }, 250);
+            });
+            
+            // Offline/Online durumu
+            window.addEventListener('online', function() {
+                console.log('İnternet bağlantısı kuruldu');
+                refreshData();
+            });
+            
+            window.addEventListener('offline', function() {
+                console.log('İnternet bağlantısı kesildi');
+                const statusElement = document.getElementById('analysis-status');
+                statusElement.innerHTML = '❌ Çevrimdışı';
+                statusElement.style.color = '#f44336';
+            });
+        });
     </script>
 </body>
-</html> 
+</html>
