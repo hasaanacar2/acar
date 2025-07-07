@@ -143,8 +143,8 @@ if not GROQ_API_KEY:
 • Erken uyarı sistemleri kurulmalı
 
 ⚠️ NOT: Bu analiz test modunda yapılmıştır. Gerçek API bağlantısı için GROQ_API_KEY gerekir.""",
-                "weather_weight": 60.0,
-                "human_weight": 40.0,
+                "weather_weight": 70.0,
+                "human_weight": 30.0,
                 "human_risk_score": risk_score * 0.8,
                 "weather_risk_score": risk_score * 0.6,
                 "human_risk_factors": human_factors,
@@ -244,8 +244,8 @@ else:
                         "combined_risk_color": risk_color,
                         "weather_data": weather_data,
                         "analysis": f"LM Analiz: {area_info.get('name', 'Orman Alanı')} - {risk_level} risk\n{analysis_text}",
-                        "weather_weight": 60.0,
-                        "human_weight": 40.0,
+                        "weather_weight": 70.0,
+                        "human_weight": 30.0,
                         "human_risk_score": risk_score * 0.8,
                         "weather_risk_score": risk_score * 0.6,
                         "human_risk_factors": human_factors,
