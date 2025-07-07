@@ -515,6 +515,157 @@ def analyze_lm():
     except Exception as e:
         return jsonify({'hata': str(e)}), 400
 
+@app.route('/analyze_all_areas', methods=['POST'])
+def analyze_all_areas():
+    """
+    Tüm alanları analiz eder ve sonuçları döndürür
+    """
+    try:
+        # GeoJSON dosyasını oku
+        geojson_path = 'static/export_with_risk_latest.geojson'
+        if not os.path.exists(geojson_path):
+            return jsonify({'error': 'GeoJSON dosyası bulunamadı'}), 404
+            
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+        
+        results = []
+        total_areas = len(geojson_data['features'])
+        
+        print(f"Tüm alanlar analiz ediliyor: {total_areas} alan")
+        
+        for i, feature in enumerate(geojson_data['features']):
+            try:
+                properties = feature.get('properties', {})
+                centroid_lat = properties.get('centroid_lat')
+                centroid_lon = properties.get('centroid_lon')
+                area = properties.get('area', 0)
+                landuse = properties.get('landuse', 'forest')
+                name = properties.get('name', 'Orman Alanı')
+                
+                if centroid_lat is None or centroid_lon is None:
+                    continue
+                
+                # Cache kontrolü
+                cached_result = get_cached_analysis(
+                    centroid_lat, centroid_lon, area, landuse, name
+                )
+                
+                if cached_result:
+                    results.append({
+                        'index': i,
+                        'name': name,
+                        'data': cached_result,
+                        'cached': True
+                    })
+                    print(f"Cache hit: {i+1}/{total_areas} - {name}")
+                else:
+                    # Yeni analiz
+                    area_info = {
+                        'landuse': landuse,
+                        'area': area,
+                        'name': name
+                    }
+                    
+                    # Hava durumu verisini çek
+                    weather_data, error = get_weather_data_for_coordinates(centroid_lat, centroid_lon)
+                    if error or weather_data is None:
+                        print(f"Hava durumu hatası: {name} - {error}")
+                        continue
+                    
+                    # LM analizini çalıştır
+                    combined_risk = lm_analyzer.analyze_forest_area(
+                        (centroid_lat, centroid_lon),
+                        weather_data,
+                        area_info
+                    )
+                    
+                    # Sonucu cache'e kaydet
+                    cache_analysis(
+                        centroid_lat, centroid_lon, area, landuse, name, combined_risk
+                    )
+                    
+                    results.append({
+                        'index': i,
+                        'name': name,
+                        'data': combined_risk,
+                        'cached': False
+                    })
+                    
+                    print(f"Analiz edildi: {i+1}/{total_areas} - {name}")
+                
+            except Exception as e:
+                print(f"Alan analiz hatası ({name}): {str(e)}")
+                continue
+        
+        print(f"Tüm analizler tamamlandı: {len(results)} alan")
+        return jsonify({
+            'success': True,
+            'total_areas': total_areas,
+            'analyzed_areas': len(results),
+            'results': results
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_cached_analyses')
+def get_cached_analyses():
+    """
+    Sadece cache'deki analizleri döndürür
+    """
+    try:
+        # GeoJSON dosyasını oku
+        geojson_path = 'static/export_with_risk_latest.geojson'
+        if not os.path.exists(geojson_path):
+            return jsonify({'error': 'GeoJSON dosyası bulunamadı'}), 404
+            
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+        
+        cached_results = []
+        
+        for i, feature in enumerate(geojson_data['features']):
+            try:
+                properties = feature.get('properties', {})
+                centroid_lat = properties.get('centroid_lat')
+                centroid_lon = properties.get('centroid_lon')
+                area = properties.get('area', 0)
+                landuse = properties.get('landuse', 'forest')
+                name = properties.get('name', 'Orman Alanı')
+                
+                if centroid_lat is None or centroid_lon is None:
+                    continue
+                
+                # Sadece cache'den kontrol et
+                cached_result = get_cached_analysis(
+                    centroid_lat, centroid_lon, area, landuse, name
+                )
+                
+                if cached_result:
+                    cached_results.append({
+                        'index': i,
+                        'name': name,
+                        'data': cached_result,
+                        'cached': True
+                    })
+                    print(f"Cache'den alındı: {name}")
+                
+            except Exception as e:
+                print(f"Cache kontrol hatası ({name}): {str(e)}")
+                continue
+        
+        print(f"Cache'den {len(cached_results)} alan bulundu")
+        return jsonify({
+            'success': True,
+            'total_areas': len(geojson_data['features']),
+            'cached_areas': len(cached_results),
+            'results': cached_results
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def initial_analysis():
     print("DEBUG: Başlangıç analizi fonksiyonu çağrıldı")
     global initial_analysis_status

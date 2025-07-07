@@ -176,14 +176,25 @@ else:
                 """Client'ı lazy loading ile başlat"""
                 if self.client is None:
                     try:
-                        self.client = groq.Groq(api_key=self.api_key)
+                        # Yeni groq kütüphanesi için
+                        self.client = groq.Client(api_key=self.api_key)
                         print("✅ Groq API başarıyla başlatıldı")
+                    except AttributeError:
+                        try:
+                            # Eski groq kütüphanesi için
+                            self.client = groq.Groq(api_key=self.api_key)
+                            print("✅ Groq API başarıyla başlatıldı (eski versiyon)")
+                        except Exception as e:
+                            print(f"❌ Groq API başlatma hatası: {e}")
+                            print("Dummy mod kullanılıyor")
+                            self.client = None
+                            return False
                     except Exception as e:
                         print(f"❌ Groq API başlatma hatası: {e}")
                         print("Dummy mod kullanılıyor")
                         self.client = None
-                        return False  # Başarısız
-                return True  # Başarılı
+                        return False
+                return True
             
             def analyze_forest_area(self, coordinates, weather_data, area_info):
                 try:
