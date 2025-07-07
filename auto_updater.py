@@ -403,7 +403,7 @@ class AutoUpdater:
             logging.info("Risk güncellemesi başlatılıyor...")
             
             # GeoJSON dosyasını yükle
-            geojson_path = 'static/export_improved.geojson'
+            geojson_path = 'static/export_with_risk_latest.geojson'
             if not os.path.exists(geojson_path):
                 logging.error(f"GeoJSON dosyası bulunamadı: {geojson_path}")
                 return
@@ -471,7 +471,7 @@ class AutoUpdater:
             # LM analizi başladığını işaretle
             cache_manager.start_lm_analysis()
             
-            geojson_path = 'static/export_improved.geojson'
+            geojson_path = 'static/export_with_risk_latest.geojson'
             fires_path = 'static/fires.json'
             fire_points = []
             

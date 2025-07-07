@@ -368,6 +368,38 @@ def analysis_status():
         }
     })
 
+@app.route('/get_latest_geojson')
+def get_latest_geojson():
+    """En güncel GeoJSON dosya adını döndür"""
+    try:
+        # static klasöründeki GeoJSON dosyalarını kontrol et
+        static_dir = os.path.join(os.path.dirname(__file__), 'static')
+        geojson_files = [f for f in os.listdir(static_dir) if f.endswith('.geojson')]
+        
+        # En güncel dosyayı bul (export_with_risk_latest.geojson varsa onu kullan)
+        if 'export_with_risk_latest.geojson' in geojson_files:
+            filename = 'export_with_risk_latest.geojson'
+        elif 'export_with_risk_auto' in str(geojson_files):
+            # export_with_risk_auto ile başlayan en güncel dosyayı bul
+            auto_files = [f for f in geojson_files if f.startswith('export_with_risk_auto')]
+            if auto_files:
+                filename = sorted(auto_files)[-1]  # En güncel dosya
+            else:
+                filename = 'export.geojson'  # Fallback
+        else:
+            filename = 'export.geojson'  # Fallback
+        
+        return jsonify({
+            'filename': filename,
+            'url': f'/static/{filename}'
+        })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'filename': 'export.geojson',
+            'url': '/static/export.geojson'
+        }), 500
+
 @app.route('/analyze_lm', methods=['POST'])
 def analyze_lm():
     try:
@@ -419,7 +451,7 @@ def initial_analysis():
     print("DEBUG: Başlangıç analizi fonksiyonu çağrıldı")
     global initial_analysis_status
     try:
-        geojson_path = 'static/export_improved.geojson'
+        geojson_path = 'static/export_with_risk_latest.geojson'
         if not os.path.exists(geojson_path):
             print(f"GeoJSON dosyası bulunamadı: {geojson_path}")
             return

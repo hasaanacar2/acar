@@ -452,8 +452,13 @@
         setInterval(updateCacheStatus, 5000);
         setInterval(updateAnalysisStatus, 5000);
 
-        // GeoJSON dosyasını yükle
-        fetch('/static/export_with_risk_auto_20250706_220807.geojson')
+        // En güncel GeoJSON dosyasını al ve yükle
+        fetch('/get_latest_geojson')
+            .then(response => response.json())
+            .then(data => {
+                console.log(`GeoJSON dosyası yükleniyor: ${data.filename}`);
+                return fetch(data.url);
+            })
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
