@@ -383,6 +383,12 @@
         // Cache durumunu güncelle
         async function updateCacheStatus() {
             try {
+                const cacheStatusElement = document.getElementById('cache-status');
+                if (!cacheStatusElement) {
+                    console.warn('cache-status elementi bulunamadı');
+                    return;
+                }
+                
                 const response = await fetch('/cache_stats');
                 const stats = await response.json();
                 const total = stats.total_entries;
@@ -396,15 +402,27 @@
                     const hitRate = Math.round((valid / total) * 100);
                     statusText += ` (${hitRate}% hit rate)`;
                 }
-                document.getElementById('cache-status').innerHTML = statusText;
+                cacheStatusElement.innerHTML = statusText;
             } catch (error) {
-                document.getElementById('cache-status').innerHTML = '❌ Cache durumu alınamadı';
+                const cacheStatusElement = document.getElementById('cache-status');
+                if (cacheStatusElement) {
+                    cacheStatusElement.innerHTML = '❌ Cache durumu alınamadı';
+                }
             }
         }
 
         // Analiz durumunu güncelle
         async function updateAnalysisStatus() {
             try {
+                const analysisStatusElement = document.getElementById('analysis-status');
+                const lmStatusDiv = document.getElementById('lm-analysis-status');
+                const lmStatusText = document.getElementById('lm-status-text');
+                
+                if (!analysisStatusElement) {
+                    console.warn('analysis-status elementi bulunamadı');
+                    return;
+                }
+                
                 const response = await fetch('/analysis_status');
                 const status = await response.json();
                 const stats = status.cache_stats;
@@ -412,12 +430,11 @@
                 if (stats.valid_entries > 0) {
                     statusText += ` - ${stats.valid_entries} analiz hazır`;
                 }
-                document.getElementById('analysis-status').innerHTML = statusText;
+                analysisStatusElement.innerHTML = statusText;
+                
                 // LM analizi durumunu kontrol et
                 const lmStatus = status.lm_analysis_status;
-                const lmStatusDiv = document.getElementById('lm-analysis-status');
-                const lmStatusText = document.getElementById('lm-status-text');
-                if (lmStatus) {
+                if (lmStatus && lmStatusDiv && lmStatusText) {
                     lmStatusDiv.style.display = 'block';
                     if (lmStatus.running) {
                         lmStatusText.innerHTML = '🔄 Çalışıyor...';
@@ -429,12 +446,19 @@
                         lmStatusText.innerHTML = '⏸️ Bekliyor';
                         lmStatusText.style.color = '#666';
                     }
-                } else {
+                } else if (lmStatusDiv) {
                     lmStatusDiv.style.display = 'none';
                 }
             } catch (error) {
-                document.getElementById('analysis-status').innerHTML = '❌ Analiz durumu alınamadı';
-                document.getElementById('lm-analysis-status').style.display = 'none';
+                const analysisStatusElement = document.getElementById('analysis-status');
+                const lmStatusDiv = document.getElementById('lm-analysis-status');
+                
+                if (analysisStatusElement) {
+                    analysisStatusElement.innerHTML = '❌ Analiz durumu alınamadı';
+                }
+                if (lmStatusDiv) {
+                    lmStatusDiv.style.display = 'none';
+                }
             }
         }
 
@@ -446,11 +470,18 @@
         }).addTo(map);
 
         // Cache ve analiz durumunu başlangıçta güncelle
-        updateCacheStatus();
-        updateAnalysisStatus();
+        setTimeout(() => {
+            updateCacheStatus();
+            updateAnalysisStatus();
+        }, 1000); // 1 saniye bekle
+        
         // Periyodik güncelleme (5 saniyede bir)
-        setInterval(updateCacheStatus, 5000);
-        setInterval(updateAnalysisStatus, 5000);
+        setInterval(() => {
+            updateCacheStatus();
+        }, 5000);
+        setInterval(() => {
+            updateAnalysisStatus();
+        }, 5000);
 
         // En güncel GeoJSON dosyasını al ve yükle
         fetch('/get_latest_geojson')
