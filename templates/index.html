@@ -382,26 +382,21 @@
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-    // Global toggle fonksiyonları
-    function toggleHeader() {
-        const header = document.querySelector('.header');
-        const toggleBtn = document.querySelector('.header-toggle');
-        if (header && toggleBtn) {
+    document.addEventListener('DOMContentLoaded', function() {
+        // Header ve legend toggle fonksiyonları
+        function toggleHeader() {
+            const header = document.querySelector('.header');
+            const toggleBtn = document.querySelector('.header-toggle');
             header.classList.toggle('minimized');
             toggleBtn.textContent = header.classList.contains('minimized') ? '+' : '−';
         }
-    }
-    
-    function toggleLegend() {
-        const legend = document.querySelector('.legend');
-        const toggleBtn = document.querySelector('.legend-toggle');
-        if (legend && toggleBtn) {
+        
+        function toggleLegend() {
+            const legend = document.querySelector('.legend');
+            const toggleBtn = document.querySelector('.legend-toggle');
             legend.classList.toggle('minimized');
             toggleBtn.textContent = legend.classList.contains('minimized') ? '+' : '−';
         }
-    }
-    
-    document.addEventListener('DOMContentLoaded', function() {
         
                         // Analiz durumunu localStorage'dan kontrol et
                 function getAnalysisStatus() {
@@ -843,9 +838,7 @@
                             // Bugün analiz edilmiş alanlar - cache'den yükle (hava durumu değişmediyse)
                             analyzedAreas.add(index);
                             console.log(`Bugünkü analiz cache'den yüklendi: ${props.name || 'Alan'} (${index + 1}/${totalAreas})`);
-                            // Bu alanlar için analiz yapılacak ama önce stil güncelle
                             updateLayerStyle(layer, feature.properties._dynamic_risk || {});
-                            pendingAnalysis.push({ layer, index, props, fromStorage: true });
                         } else {
                             // Yeni analiz gerekiyor
                             pendingAnalysis.push({ layer, index, props, fromStorage: false });
@@ -880,7 +873,7 @@
                         }
                     });
                     
-                    console.log(`${analyzedAreas.size} alan localStorage'dan yüklendi, ${pendingAnalysis.length} alan analiz edilecek`);
+                    console.log(`${analyzedAreas.size} alan cache'den yüklendi, ${pendingAnalysis.length} alan analiz edilecek`);
                     
                     // Günlük analiz kontrolü
                     if (shouldAnalyze) {
@@ -908,16 +901,9 @@
                         console.log(`Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(pendingAnalysis.length/batchSize)} analiz ediliyor...`);
                         
                         // Batch içindeki alanları paralel olarak analiz et
-                        const batchPromises = batch.map(async ({ layer, index, props, fromStorage }, batchIndex) => {
+                        const batchPromises = batch.map(async ({ layer, index, props }, batchIndex) => {
                             const globalIndex = i + batchIndex;
                             const originalIndex = index;
-                            
-                            // Eğer localStorage'dan yüklenmişse, önce mevcut veriyi göster
-                            if (fromStorage && layer.feature.properties._dynamic_risk) {
-                                updateLayerStyle(layer, layer.feature.properties._dynamic_risk);
-                                console.log(`localStorage'dan yüklendi: ${props.name || 'Alan'} (${globalIndex + 1}/${pendingAnalysis.length})`);
-                                return; // Bu alan için analiz yapma
-                            }
                             
                             try {
                                 const res = await fetch('/analyze_lm', {
@@ -981,11 +967,6 @@
                 
                 // Analiz başlat
                 setTimeout(() => {
-                    // Önce localStorage'dan yüklenen alanları göster
-                    if (analyzedAreas.size > 0) {
-                        console.log(`✅ ${analyzedAreas.size} alan localStorage'dan yüklendi`);
-                    }
-                    
                     analyzeSequentially().then(() => {
                         updateCacheStatus();
                         updateAnalysisStatus();

@@ -143,8 +143,8 @@ if not GROQ_API_KEY:
 • Erken uyarı sistemleri kurulmalı
 
 ⚠️ NOT: Bu analiz test modunda yapılmıştır. Gerçek API bağlantısı için GROQ_API_KEY gerekir.""",
-                "weather_weight": 70.0,
-                "human_weight": 30.0,
+                "weather_weight": 60.0,
+                "human_weight": 40.0,
                 "human_risk_score": risk_score * 0.8,
                 "weather_risk_score": risk_score * 0.6,
                 "human_risk_factors": human_factors,
@@ -182,11 +182,15 @@ else:
                         print(f"❌ Groq API başlatma hatası: {e}")
                         print("Dummy mod kullanılıyor")
                         self.client = None
-                        raise ImportError("Groq API başlatılamadı")
+                        return False  # Başarısız
+                return True  # Başarılı
             
             def analyze_forest_area(self, coordinates, weather_data, area_info):
                 try:
-                    self._init_client()
+                    # Client başlatma kontrolü
+                    if not self._init_client():
+                        return self._dummy_analysis(coordinates, weather_data, area_info)
+                    
                     check_rate_limit()
                     lat, lon = coordinates
                     prompt = f"""
@@ -244,8 +248,8 @@ else:
                         "combined_risk_color": risk_color,
                         "weather_data": weather_data,
                         "analysis": f"LM Analiz: {area_info.get('name', 'Orman Alanı')} - {risk_level} risk\n{analysis_text}",
-                        "weather_weight": 70.0,
-                        "human_weight": 30.0,
+                        "weather_weight": 60.0,
+                        "human_weight": 40.0,
                         "human_risk_score": risk_score * 0.8,
                         "weather_risk_score": risk_score * 0.6,
                         "human_risk_factors": human_factors,
@@ -335,7 +339,4 @@ else:
                     "fire_status": "none",
                     "fire_spread_risk": False
                 }
-        lm_analyzer = DummyAnalyzerFallback()
-
-# Global LM analyzer instance
-lm_analyzer = LMRiskAnalyzer() 
+        lm_analyzer = DummyAnalyzerFallback() 
