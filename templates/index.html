@@ -334,7 +334,10 @@
             Analiz durumu kontrol ediliyor...
         </div>
         <div id="render-info" class="status-info" style="color: #ff9800; font-size: 10px;">
-            ⚠️ Sadece ilk 10 alan analiz ediliyor
+            ⚠️ Akıllı analiz sistemi (hava durumu + localStorage)
+        </div>
+        <div id="weather-update-info" class="status-info" style="color: #2196f3; font-size: 10px; display: none;">
+            🔄 Yeni hava durumu verisi tespit edildi - Cache temizleniyor...
         </div>
         <div id="lm-analysis-status" class="status-info" style="display: none;">
             🤖 LM Analizi: <span id="lm-status-text">Kontrol ediliyor...</span>
@@ -351,12 +354,24 @@
             <span>Düşük Risk</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color" style="background-color: orange;"></div>
+            <div class="legend-color" style="background-color: lightgreen;"></div>
+            <span>Düşük-Orta Risk</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: yellow;"></div>
             <span>Orta Risk</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: orange;"></div>
+            <span>Orta-Yüksek Risk</span>
         </div>
         <div class="legend-item">
             <div class="legend-color" style="background-color: red;"></div>
             <span>Yüksek Risk</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: darkred;"></div>
+            <span>Çok Yüksek Risk</span>
         </div>
         <div class="legend-item">
             <div class="legend-color" style="background-color: purple; border: 2px dashed #333;"></div>
@@ -383,20 +398,56 @@
             toggleBtn.textContent = legend.classList.contains('minimized') ? '+' : '−';
         }
         
-        // Cache durumunu güncelle
-        async function updateCacheStatus() {
-            try {
-                const cacheStatusElement = document.getElementById('cache-status');
-                if (!cacheStatusElement) {
-                    console.warn('cache-status elementi bulunamadı');
-                    return;
+                        // Analiz durumunu localStorage'dan kontrol et
+                function getAnalysisStatus() {
+                    const status = localStorage.getItem('analysis_status');
+                    return status ? JSON.parse(status) : { 
+                        lastUpdate: null, 
+                        analyzedAreas: [],
+                        weatherDate: null,
+                        lastWeatherCheck: null
+                    };
                 }
                 
-                const response = await fetch('/cache_stats');
-                const stats = await response.json();
-                const total = stats.total_entries;
-                const valid = stats.valid_entries;
-                const expired = stats.expired_entries;
+                // Analiz durumunu localStorage'a kaydet
+                function saveAnalysisStatus(analyzedAreas, weatherDate = null) {
+                    const status = {
+                        lastUpdate: new Date().toISOString(),
+                        analyzedAreas: analyzedAreas,
+                        weatherDate: weatherDate,
+                        lastWeatherCheck: new Date().toISOString()
+                    };
+                    localStorage.setItem('analysis_status', JSON.stringify(status));
+                }
+                
+                // Hava durumu tarihini kontrol et
+                function checkWeatherDateChange(currentWeatherDate) {
+                    const status = getAnalysisStatus();
+                    const lastWeatherDate = status.weatherDate;
+                    
+                    if (lastWeatherDate !== currentWeatherDate) {
+                        console.log(`🔄 Hava durumu tarihi değişti: ${lastWeatherDate} -> ${currentWeatherDate}`);
+                        // localStorage'ı temizle
+                        localStorage.removeItem('analysis_status');
+                        return true; // Değişiklik var
+                    }
+                    return false; // Değişiklik yok
+                }
+                
+                // Cache durumunu güncelle
+                async function updateCacheStatus() {
+                    try {
+                        const cacheStatusElement = document.getElementById('cache-status');
+                        if (!cacheStatusElement) {
+                            console.warn('cache-status elementi bulunamadı');
+                            return;
+                        }
+                        
+                        const response = await fetch('/cache_stats');
+                        const stats = await response.json();
+                        const total = stats.total_entries;
+                        const valid = stats.valid_entries;
+                        const expired = stats.expired_entries;
                 let statusText = `📊 Cache: ${valid} geçerli`;
                 if (expired > 0) {
                     statusText += `, ${expired} süresi dolmuş`;
@@ -414,56 +465,84 @@
             }
         }
 
-        // Analiz durumunu güncelle
-        async function updateAnalysisStatus() {
-            try {
-                const analysisStatusElement = document.getElementById('analysis-status');
-                const lmStatusDiv = document.getElementById('lm-analysis-status');
-                const lmStatusText = document.getElementById('lm-status-text');
-                
-                if (!analysisStatusElement) {
-                    console.warn('analysis-status elementi bulunamadı');
-                    return;
-                }
-                
-                const response = await fetch('/analysis_status');
-                const status = await response.json();
-                const stats = status.cache_stats;
-                let statusText = `🟢 Sunucu çalışıyor`;
-                if (stats.valid_entries > 0) {
-                    statusText += ` - ${stats.valid_entries} analiz hazır`;
-                }
-                analysisStatusElement.innerHTML = statusText;
-                
-                // LM analizi durumunu kontrol et
-                const lmStatus = status.lm_analysis_status;
-                if (lmStatus && lmStatusDiv && lmStatusText) {
-                    lmStatusDiv.style.display = 'block';
-                    if (lmStatus.running) {
-                        lmStatusText.innerHTML = '🔄 Çalışıyor...';
-                        lmStatusText.style.color = '#ff9800';
-                    } else if (lmStatus.completed) {
-                        lmStatusText.innerHTML = '✅ Tamamlandı';
-                        lmStatusText.style.color = '#4caf50';
-                    } else {
-                        lmStatusText.innerHTML = '⏸️ Bekliyor';
-                        lmStatusText.style.color = '#666';
+                        // Analiz durumunu güncelle
+                async function updateAnalysisStatus() {
+                    try {
+                        const analysisStatusElement = document.getElementById('analysis-status');
+                        const lmStatusDiv = document.getElementById('lm-analysis-status');
+                        const lmStatusText = document.getElementById('lm-status-text');
+                        const weatherUpdateDiv = document.getElementById('weather-update-info');
+                        
+                        if (!analysisStatusElement) {
+                            console.warn('analysis-status elementi bulunamadı');
+                            return;
+                        }
+                        
+                        const response = await fetch('/analysis_status');
+                        const status = await response.json();
+                        const stats = status.cache_stats;
+                        
+                        // localStorage durumunu da kontrol et
+                        const localStatus = getAnalysisStatus();
+                        const localCount = localStatus.analyzedAreas ? localStatus.analyzedAreas.length : 0;
+                        const localWeatherDate = localStatus.weatherDate;
+                        
+                        let statusText = `🟢 Sunucu çalışıyor`;
+                        if (stats.valid_entries > 0) {
+                            statusText += ` - ${stats.valid_entries} analiz hazır`;
+                        }
+                        if (localCount > 0) {
+                            statusText += ` - ${localCount} localStorage`;
+                            if (localWeatherDate) {
+                                statusText += ` (${localWeatherDate})`;
+                            }
+                        }
+                        analysisStatusElement.innerHTML = statusText;
+                        
+                        // Hava durumu güncelleme durumunu kontrol et
+                        const weatherUpdate = status.weather_update;
+                        if (weatherUpdate && weatherUpdateDiv) {
+                            if (weatherUpdate.cache_cleared && weatherUpdate.last_weather_date) {
+                                weatherUpdateDiv.style.display = 'block';
+                                weatherUpdateDiv.innerHTML = `🔄 Yeni hava durumu verisi: ${weatherUpdate.last_weather_date} - Cache temizlendi`;
+                            } else {
+                                weatherUpdateDiv.style.display = 'none';
+                            }
+                        }
+                        
+                        // LM analizi durumunu kontrol et
+                        const lmStatus = status.lm_analysis_status;
+                        if (lmStatus && lmStatusDiv && lmStatusText) {
+                            lmStatusDiv.style.display = 'block';
+                            if (lmStatus.running) {
+                                lmStatusText.innerHTML = '🔄 Çalışıyor...';
+                                lmStatusText.style.color = '#ff9800';
+                            } else if (lmStatus.completed) {
+                                lmStatusText.innerHTML = '✅ Tamamlandı';
+                                lmStatusText.style.color = '#4caf50';
+                            } else {
+                                lmStatusText.innerHTML = '⏸️ Bekliyor';
+                                lmStatusText.style.color = '#666';
+                            }
+                        } else if (lmStatusDiv) {
+                            lmStatusDiv.style.display = 'none';
+                        }
+                    } catch (error) {
+                        const analysisStatusElement = document.getElementById('analysis-status');
+                        const lmStatusDiv = document.getElementById('lm-analysis-status');
+                        const weatherUpdateDiv = document.getElementById('weather-update-info');
+                        
+                        if (analysisStatusElement) {
+                            analysisStatusElement.innerHTML = '❌ Analiz durumu alınamadı';
+                        }
+                        if (lmStatusDiv) {
+                            lmStatusDiv.style.display = 'none';
+                        }
+                        if (weatherUpdateDiv) {
+                            weatherUpdateDiv.style.display = 'none';
+                        }
                     }
-                } else if (lmStatusDiv) {
-                    lmStatusDiv.style.display = 'none';
                 }
-            } catch (error) {
-                const analysisStatusElement = document.getElementById('analysis-status');
-                const lmStatusDiv = document.getElementById('lm-analysis-status');
-                
-                if (analysisStatusElement) {
-                    analysisStatusElement.innerHTML = '❌ Analiz durumu alınamadı';
-                }
-                if (lmStatusDiv) {
-                    lmStatusDiv.style.display = 'none';
-                }
-            }
-        }
 
         // Türkiye'nin merkez koordinatları
         var map = L.map('map').setView([39.0, 35.0], 6);
@@ -628,8 +707,12 @@
                         });
                     } else {
                         let renk = 'green';
-                        if (data.combined_risk_level === 'Yüksek') renk = 'red';
-                        else if (data.combined_risk_level === 'Orta') renk = 'orange';
+                        if (data.combined_risk_level === 'Çok Yüksek') renk = 'darkred';
+                        else if (data.combined_risk_level === 'Yüksek') renk = 'red';
+                        else if (data.combined_risk_level === 'Orta-Yüksek') renk = 'orange';
+                        else if (data.combined_risk_level === 'Orta') renk = 'yellow';
+                        else if (data.combined_risk_level === 'Düşük-Orta') renk = 'lightgreen';
+                        else renk = 'green';
                         layer.setStyle({ 
                             color: renk, 
                             fillColor: renk,
@@ -707,51 +790,80 @@
                 async function analyzeSequentially() {
                     console.log("Analiz başlatılıyor...");
                     
-                    // Sadece ilk 10 alanı analiz et (Render.com sınırlaması için)
-                    const maxAreas = Math.min(features.length, 10);
-                    console.log(`Render.com sınırlaması nedeniyle sadece ilk ${maxAreas} alan analiz edilecek`);
+                    // Render.com optimizasyonu: Tüm alanları analiz et, ama akıllı rate limiting ile
+                    const totalAreas = features.length;
+                    console.log(`Toplam ${totalAreas} alan analiz edilecek (Render.com optimizasyonu ile)`);
                     
-                    for (let i = 0; i < maxAreas; i++) {
-                        const layer = features[i];
+                    // localStorage'dan önceki analiz durumunu kontrol et
+                    const analysisStatus = getAnalysisStatus();
+                    const lastUpdate = analysisStatus.lastUpdate ? new Date(analysisStatus.lastUpdate) : null;
+                    const today = new Date();
+                    const isToday = lastUpdate && 
+                        lastUpdate.getDate() === today.getDate() && 
+                        lastUpdate.getMonth() === today.getMonth() && 
+                        lastUpdate.getFullYear() === today.getFullYear();
+                    
+                    // Hava durumu tarihini kontrol et
+                    let currentWeatherDate = null;
+                    try {
+                        const statusResponse = await fetch('/analysis_status');
+                        const statusData = await statusResponse.json();
+                        currentWeatherDate = statusData.weather_update?.last_weather_date;
+                    } catch (error) {
+                        console.warn("Hava durumu tarihi alınamadı:", error);
+                    }
+                    
+                    // Hava durumu tarihi değişikliği kontrolü
+                    const weatherDateChanged = currentWeatherDate ? checkWeatherDateChange(currentWeatherDate) : false;
+                    
+                    // Eğer bugün analiz yapılmışsa ve saat 12:00'dan sonraysa, yeni gün için analiz yap
+                    // VEYA hava durumu tarihi değiştiyse analiz yap
+                    const shouldAnalyze = !isToday || (today.getHours() >= 12 && !isToday) || weatherDateChanged;
+                    
+                    // Önce cache'den mevcut analizleri kontrol et
+                    const analyzedAreas = new Set();
+                    const pendingAnalysis = [];
+                    
+                    // Tüm alanları varsayılan stil ile göster ve cache kontrolü yap
+                    features.forEach((layer, index) => {
                         const feature = layer.feature;
                         const props = feature.properties;
                         
-                        try {
-                            const res = await fetch('/analyze_lm', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    centroid_lat: props.centroid_lat,
-                                    centroid_lon: props.centroid_lon,
-                                    area: props.area,
-                                    landuse: props.landuse,
-                                    name: props.name
-                                })
+                        // Cache'den mevcut analiz kontrolü
+                        if (feature.properties._dynamic_risk) {
+                            analyzedAreas.add(index);
+                            updateLayerStyle(layer, feature.properties._dynamic_risk);
+                            console.log(`Cache'den yüklendi: ${props.name || 'Alan'} (${index + 1}/${totalAreas})`);
+                        } else if (isToday && analysisStatus.analyzedAreas.includes(index) && !weatherDateChanged) {
+                            // Bugün analiz edilmiş alanlar - cache'den yükle (hava durumu değişmediyse)
+                            analyzedAreas.add(index);
+                            console.log(`Bugünkü analiz cache'den yüklendi: ${props.name || 'Alan'} (${index + 1}/${totalAreas})`);
+                            updateLayerStyle(layer, feature.properties._dynamic_risk || {});
+                        } else {
+                            // Yeni analiz gerekiyor
+                            pendingAnalysis.push({ layer, index, props, fromStorage: false });
+                            const reason = weatherDateChanged ? "hava durumu değişikliği" : "yeni analiz";
+                            console.log(`Yeni analiz gerekiyor: ${props.name || 'Alan'} (${index + 1}/${totalAreas}) - ${reason}`);
+                            
+                            // Varsayılan popup içeriği
+                            layer.bindPopup(`
+                                <div class="popup-content">
+                                    <h3 class="popup-title">${props.name || 'Orman Alanı'}</h3>
+                                    <div style="padding: 15px; background-color: #f0f0f0; border-radius: 8px; text-align: center;">
+                                        <div style="color: #666; font-size: 14px;">
+                                            ⏳ Analiz yapılıyor... (${pendingAnalysis.length}/${totalAreas - analyzedAreas.size})
+                                        </div>
+                                        <div style="margin-top: 8px; font-size: 12px; color: #999;">
+                                            Bu alan için risk analizi henüz tamamlanmadı.
+                                        </div>
+                                    </div>
+                                </div>
+                            `, {
+                                maxWidth: 400,
+                                className: 'custom-popup'
                             });
                             
-                            if (!res.ok) {
-                                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-                            }
-                            
-                            const data = await res.json();
-                            const isCached = res.headers.get('X-Cache-Hit') === 'true';
-                            
-                            if (isCached) {
-                                cachedCount++;
-                                console.log(`Cache hit: ${props.name || 'Alan'}`);
-                            } else {
-                                analyzedCount++;
-                                console.log(`Yeni analiz: ${props.name || 'Alan'}`);
-                            }
-                            
-                            updateLayerStyle(layer, data);
-                            feature.properties._dynamic_risk = data;
-                            
-                            // Her istek arasında 1 saniye bekle (rate limiting)
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                            
-                        } catch (err) {
-                            console.error(`Hata: ${props.name || 'Alan'}`, err);
+                            // Varsayılan stil
                             layer.setStyle({ 
                                 color: '#888', 
                                 fillColor: '#888',
@@ -759,9 +871,98 @@
                                 fillOpacity: 0.5 
                             });
                         }
+                    });
+                    
+                    console.log(`${analyzedAreas.size} alan cache'den yüklendi, ${pendingAnalysis.length} alan analiz edilecek`);
+                    
+                    // Günlük analiz kontrolü
+                    if (shouldAnalyze) {
+                        if (weatherDateChanged) {
+                            console.log("🔄 Hava durumu tarihi değişti - yeni analizler yapılacak");
+                        } else {
+                            console.log("Günlük analiz başlatılıyor - yeni hava durumu verileri ile");
+                        }
+                    } else {
+                        console.log("Bugünkü analizler zaten mevcut");
+                    }
+                    
+                    // Sadece analiz edilmemiş alanları analiz et
+                    if (pendingAnalysis.length === 0) {
+                        console.log("Tüm alanlar zaten analiz edilmiş!");
+                        return;
+                    }
+                    
+                    // Render.com için optimize edilmiş analiz
+                    const batchSize = 5; // Her batch'te 5 alan
+                    const delayBetweenBatches = 3000; // Batch'ler arası 3 saniye
+                    
+                    for (let i = 0; i < pendingAnalysis.length; i += batchSize) {
+                        const batch = pendingAnalysis.slice(i, i + batchSize);
+                        console.log(`Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(pendingAnalysis.length/batchSize)} analiz ediliyor...`);
+                        
+                        // Batch içindeki alanları paralel olarak analiz et
+                        const batchPromises = batch.map(async ({ layer, index, props }, batchIndex) => {
+                            const globalIndex = i + batchIndex;
+                            const originalIndex = index;
+                            
+                            try {
+                                const res = await fetch('/analyze_lm', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        centroid_lat: props.centroid_lat,
+                                        centroid_lon: props.centroid_lon,
+                                        area: props.area,
+                                        landuse: props.landuse,
+                                        name: props.name
+                                    })
+                                });
+                                
+                                if (!res.ok) {
+                                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                                }
+                                
+                                const data = await res.json();
+                                const isCached = res.headers.get('X-Cache-Hit') === 'true';
+                                
+                                if (isCached) {
+                                    cachedCount++;
+                                    console.log(`Cache hit: ${props.name || 'Alan'} (${globalIndex + 1}/${pendingAnalysis.length})`);
+                                } else {
+                                    analyzedCount++;
+                                    console.log(`Yeni analiz: ${props.name || 'Alan'} (${globalIndex + 1}/${pendingAnalysis.length})`);
+                                }
+                                
+                                updateLayerStyle(layer, data);
+                                layer.feature.properties._dynamic_risk = data;
+                                
+                            } catch (err) {
+                                console.error(`Hata: ${props.name || 'Alan'}`, err);
+                                layer.setStyle({ 
+                                    color: '#888', 
+                                    fillColor: '#888',
+                                    weight: 2, 
+                                    fillOpacity: 0.5 
+                                });
+                            }
+                        });
+                        
+                        // Batch'i paralel olarak çalıştır
+                        await Promise.all(batchPromises);
+                        
+                        // Batch'ler arası bekleme (Render.com rate limiting için)
+                        if (i + batchSize < pendingAnalysis.length) {
+                            console.log(`Batch tamamlandı, ${delayBetweenBatches/1000} saniye bekleniyor...`);
+                            await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+                        }
                     }
                     
                     console.log(`Analiz tamamlandı: ${analyzedCount} yeni, ${cachedCount} cache`);
+                    
+                    // Analiz tamamlandığında localStorage'a kaydet
+                    const allAnalyzedAreas = Array.from(analyzedAreas);
+                    saveAnalysisStatus(allAnalyzedAreas, currentWeatherDate);
+                    console.log(`${allAnalyzedAreas.length} alan localStorage'a kaydedildi (Hava durumu: ${currentWeatherDate})`);
                 }
                 
                 // Analiz başlat

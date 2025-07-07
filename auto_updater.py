@@ -9,7 +9,7 @@ import logging
 import random
 import concurrent.futures
 from collections import deque
-from lm_risk_analyzer import lm_analyzer
+from lm_risk_analyzer import lm_analyzer, get_cached_analysis, update_weather_date
 from cache_manager import cache_manager
 
 # WeatherAPI rate limiting
@@ -127,13 +127,18 @@ class AutoUpdater:
             # 1 gün önceki 12:00'ı hesapla
             yesterday = datetime.now() - timedelta(days=1)
             yesterday_noon = yesterday.replace(hour=12, minute=0, second=0, microsecond=0)
+            weather_date = yesterday_noon.strftime('%Y-%m-%d')
+            
+            # Yeni hava durumu tarihi kontrolü
+            if update_weather_date(weather_date):
+                logging.info(f"🔄 Yeni hava durumu verisi tespit edildi: {weather_date}")
             
             # WeatherAPI.com çağrısı - Geçmiş veri için
             url = "http://api.weatherapi.com/v1/history.json"
             params = {
                 'key': WEATHERAPI_KEY,
                 'q': f"{lat},{lon}",
-                'dt': yesterday_noon.strftime('%Y-%m-%d'),
+                'dt': weather_date,
                 'aqi': 'no'
             }
             
@@ -219,12 +224,14 @@ class AutoUpdater:
 
     def hesapla_risk_skoru(self, sicaklik, nem, ruzgar_hizi, yagis_7_gun):
         """
-        Orman yangını risk skoru hesaplama fonksiyonu
+        Geliştirilmiş orman yangını risk skoru hesaplama fonksiyonu
         """
         risk_skoru = 0
         
-        # Sıcaklık faktörü (0-30 puan)
-        if sicaklik >= 30:
+        # Sıcaklık faktörü (0-35 puan) - Daha hassas
+        if sicaklik >= 35:
+            risk_skoru += 35
+        elif sicaklik >= 30:
             risk_skoru += 30
         elif sicaklik >= 25:
             risk_skoru += 25
@@ -237,56 +244,75 @@ class AutoUpdater:
         else:
             risk_skoru += 5
         
-        # Nem faktörü (0-25 puan)
-        if nem <= 30:
+        # Nem faktörü (0-30 puan) - Daha hassas
+        if nem <= 25:
+            risk_skoru += 30
+        elif nem <= 35:
             risk_skoru += 25
-        elif nem <= 40:
+        elif nem <= 45:
             risk_skoru += 20
-        elif nem <= 50:
+        elif nem <= 55:
             risk_skoru += 15
-        elif nem <= 60:
+        elif nem <= 65:
             risk_skoru += 10
-        elif nem <= 70:
+        elif nem <= 75:
             risk_skoru += 5
         else:
             risk_skoru += 0
         
-        # Rüzgar hızı faktörü (0-25 puan)
-        if ruzgar_hizi >= 50:
+        # Rüzgar hızı faktörü (0-25 puan) - Daha hassas
+        if ruzgar_hizi >= 40:
             risk_skoru += 25
-        elif ruzgar_hizi >= 40:
-            risk_skoru += 20
         elif ruzgar_hizi >= 30:
-            risk_skoru += 15
+            risk_skoru += 20
         elif ruzgar_hizi >= 20:
+            risk_skoru += 15
+        elif ruzgar_hizi >= 15:
             risk_skoru += 10
         elif ruzgar_hizi >= 10:
             risk_skoru += 5
         else:
             risk_skoru += 0
         
-        # Yağış faktörü (0-20 puan)
-        if yagis_7_gun <= 5:
+        # Yağış faktörü (0-20 puan) - Daha hassas
+        if yagis_7_gun <= 3:
             risk_skoru += 20
-        elif yagis_7_gun <= 10:
+        elif yagis_7_gun <= 8:
             risk_skoru += 15
-        elif yagis_7_gun <= 20:
+        elif yagis_7_gun <= 15:
             risk_skoru += 10
-        elif yagis_7_gun <= 30:
+        elif yagis_7_gun <= 25:
             risk_skoru += 5
         else:
             risk_skoru += 0
+        
+        # Mevsim faktörü (0-10 puan) - Yaz aylarında ek risk
+        import datetime
+        current_month = datetime.datetime.now().month
+        if current_month in [6, 7, 8]:  # Haziran, Temmuz, Ağustos
+            risk_skoru += 10
+        elif current_month in [5, 9]:  # Mayıs, Eylül
+            risk_skoru += 5
+        
+        # Minimum risk skoru (çok düşük skorları engelle)
+        risk_skoru = max(risk_skoru, 15)
         
         return min(risk_skoru, 100)
 
     def get_risk_level(self, risk_skoru):
         """
-        Risk skoruna göre seviye belirleme
+        Geliştirilmiş risk skoruna göre seviye belirleme
         """
-        if risk_skoru >= 70:
+        if risk_skoru >= 75:
+            return "Çok Yüksek"
+        elif risk_skoru >= 60:
             return "Yüksek"
-        elif risk_skoru >= 40:
+        elif risk_skoru >= 45:
+            return "Orta-Yüksek"
+        elif risk_skoru >= 30:
             return "Orta"
+        elif risk_skoru >= 20:
+            return "Düşük-Orta"
         else:
             return "Düşük"
 
@@ -355,18 +381,36 @@ class AutoUpdater:
                 )
                 risk_seviyesi = self.get_risk_level(risk_skoru)
                 
-                # Bunun yerine, her zaman aşağıdaki varsayılanları yaz:
-                feature['properties']['human_risk_score'] = 50
-                feature['properties']['human_risk_factors'] = [
-                    {"factor": "Yerleşim yakınlığı", "score": 50, "description": "Orta seviye risk"},
-                    {"factor": "Turizm aktiviteleri", "score": 40, "description": "Düşük-orta risk"},
-                    {"factor": "Yol ağı", "score": 60, "description": "Orta-yüksek risk"}
-                ]
-                feature['properties']['lm_analysis'] = "LM analizi sadece harita üzerinde tıklanan alanlar için yapılır."
-                feature['properties']['weather_weight'] = 60.0
-                feature['properties']['human_weight'] = 40.0
-                feature['properties']['distance_from_city'] = 50.0
-                feature['properties']['nearest_city'] = "bilinmiyor"
+                # Cache'den analiz kontrolü
+                cached_analysis = get_cached_analysis(
+                    centroid_lat, centroid_lon, 
+                    feature.get('properties', {}).get('area', 0),
+                    feature.get('properties', {}).get('landuse', 'forest'),
+                    feature.get('properties', {}).get('name', 'Orman Alanı')
+                )
+                
+                if cached_analysis:
+                    # Cache'den analiz verilerini al
+                    feature['properties']['human_risk_score'] = cached_analysis.get('human_risk_score', 50)
+                    feature['properties']['human_risk_factors'] = cached_analysis.get('human_risk_factors', [])
+                    feature['properties']['lm_analysis'] = cached_analysis.get('analysis', 'LM analizi mevcut.')
+                    feature['properties']['weather_weight'] = cached_analysis.get('weather_weight', 60.0)
+                    feature['properties']['human_weight'] = cached_analysis.get('human_weight', 40.0)
+                    feature['properties']['distance_from_city'] = cached_analysis.get('distance_from_city', 50.0)
+                    feature['properties']['nearest_city'] = cached_analysis.get('nearest_city', 'bilinmiyor')
+                else:
+                    # Varsayılan değerler
+                    feature['properties']['human_risk_score'] = 50
+                    feature['properties']['human_risk_factors'] = [
+                        {"factor": "Yerleşim yakınlığı", "score": 50, "description": "Orta seviye risk"},
+                        {"factor": "Turizm aktiviteleri", "score": 40, "description": "Düşük-orta risk"},
+                        {"factor": "Yol ağı", "score": 60, "description": "Orta-yüksek risk"}
+                    ]
+                    feature['properties']['lm_analysis'] = "LM analizi sadece harita üzerinde tıklanan alanlar için yapılır."
+                    feature['properties']['weather_weight'] = 60.0
+                    feature['properties']['human_weight'] = 40.0
+                    feature['properties']['distance_from_city'] = 50.0
+                    feature['properties']['nearest_city'] = "bilinmiyor"
             
             # Properties'e risk bilgilerini ekle
             if 'properties' not in feature:

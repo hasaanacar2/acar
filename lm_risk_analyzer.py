@@ -15,6 +15,13 @@ rate_limit_lock = threading.Lock()
 MAX_REQUESTS_PER_MINUTE = 90  # 100'ün altında güvenli marj
 RATE_LIMIT_WINDOW = 60  # 60 saniye
 
+# Cache yönetimi için
+cache_data = {}
+cache_lock = threading.Lock()
+CACHE_EXPIRY_HOURS = 12  # 12 saat sonra cache temizle
+last_weather_date = None  # Son hava durumu verisi tarihi
+weather_date_lock = threading.Lock()
+
 def check_rate_limit():
     """
     Rate limit kontrolü - dakikada maksimum 90 istek
@@ -38,6 +45,54 @@ def check_rate_limit():
         # Yeni istek zamanını ekle
         request_times.append(now)
         return True
+
+def clear_expired_cache():
+    """Süresi dolmuş cache'leri temizle"""
+    with cache_lock:
+        now = time.time()
+        expired_keys = []
+        for key, (timestamp, data) in cache_data.items():
+            if now - timestamp > CACHE_EXPIRY_HOURS * 3600:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del cache_data[key]
+        
+        if expired_keys:
+            print(f"Cache temizlendi: {len(expired_keys)} eski analiz silindi")
+
+def get_cached_analysis(lat, lon, area, landuse, name):
+    """Cache'den analiz sonucu al"""
+    cache_key = f"{lat:.4f}_{lon:.4f}_{area}_{landuse}_{name}"
+    with cache_lock:
+        if cache_key in cache_data:
+            timestamp, data = cache_data[cache_key]
+            if time.time() - timestamp < CACHE_EXPIRY_HOURS * 3600:
+                return data
+    return None
+
+def update_weather_date(new_date):
+    """Yeni hava durumu tarihi geldiğinde cache'i temizle"""
+    global last_weather_date
+    with weather_date_lock:
+        if last_weather_date != new_date:
+            print(f"🔄 Yeni hava durumu verisi: {new_date} -> Cache temizleniyor...")
+            last_weather_date = new_date
+            clear_all_cache()
+            return True
+    return False
+
+def clear_all_cache():
+    """Tüm cache'i temizle"""
+    with cache_lock:
+        cache_data.clear()
+        print(f"🗑️ Tüm cache temizlendi ({len(cache_data)} analiz silindi)")
+
+def cache_analysis(lat, lon, area, landuse, name, analysis_data):
+    """Analiz sonucunu cache'e kaydet"""
+    cache_key = f"{lat:.4f}_{lon:.4f}_{area}_{landuse}_{name}"
+    with cache_lock:
+        cache_data[cache_key] = (time.time(), analysis_data)
 
 if not GROQ_API_KEY:
     print("UYARI: GROQ_API_KEY bulunamadı, dummy analiz modu aktif!")

@@ -3,7 +3,7 @@ import requests
 from datetime import datetime, timedelta
 import os
 from auto_updater import auto_updater
-from lm_risk_analyzer import lm_analyzer
+from lm_risk_analyzer import lm_analyzer, get_cached_analysis, cache_analysis, clear_expired_cache, cache_data, update_weather_date
 from cache_manager import cache_manager
 import threading
 import concurrent.futures
@@ -46,6 +46,24 @@ weather_cache = {}  # Hava durumu cache'i
 weather_cache_lock = threading.Lock()
 MAX_WORKERS = 4  # Paralel işlem sayısı
 
+# Rate limiting için
+last_request_time = 0
+request_lock = threading.Lock()
+MIN_REQUEST_INTERVAL = 0.6  # Minimum 0.6 saniye aralık (dakikada 100 istek sınırı için)
+
+def check_weather_rate_limit():
+    """
+    WeatherAPI.com rate limiting kontrolü
+    """
+    global last_request_time
+    with request_lock:
+        current_time = time.time()
+        time_since_last = current_time - last_request_time
+        if time_since_last < MIN_REQUEST_INTERVAL:
+            sleep_time = MIN_REQUEST_INTERVAL - time_since_last
+            time.sleep(sleep_time)
+        last_request_time = time.time()
+
 def get_weather_data_for_coordinates(lat, lon):
     """
     Belirli koordinatlar için WeatherAPI.com'dan hava durumu verilerini çeker
@@ -64,16 +82,24 @@ def get_weather_data_for_coordinates(lat, lon):
                 return weather_data, None
     
     try:
+        # Rate limiting kontrolü
+        check_weather_rate_limit()
+        
         # 1 gün önceki 12:00'ı hesapla
         yesterday = datetime.now() - timedelta(days=1)
         yesterday_noon = yesterday.replace(hour=12, minute=0, second=0, microsecond=0)
+        weather_date = yesterday_noon.strftime('%Y-%m-%d')
+        
+        # Yeni hava durumu tarihi kontrolü
+        if update_weather_date(weather_date):
+            print(f"🔄 Yeni hava durumu verisi tespit edildi: {weather_date}")
         
         # WeatherAPI.com çağrısı - Geçmiş veri için
         url = "http://api.weatherapi.com/v1/history.json"
         params = {
             'key': WEATHERAPI_KEY,
             'q': f"{lat},{lon}",
-            'dt': yesterday_noon.strftime('%Y-%m-%d'),
+            'dt': weather_date,
             'aqi': 'no'
         }
         
@@ -124,6 +150,9 @@ def get_current_weather_data(lat, lon):
     Mevcut hava durumu verilerini çeker (fallback için)
     """
     try:
+        # Rate limiting kontrolü
+        check_weather_rate_limit()
+        
         url = "http://api.weatherapi.com/v1/current.json"
         params = {
             'key': WEATHERAPI_KEY,
@@ -206,7 +235,7 @@ def analyze_single_area(feature_data):
 
 def hesapla_risk_skoru(sicaklik, nem, ruzgar_hizi, yagis_7_gun):
     """
-    Orman yangını risk skoru hesaplama fonksiyonu
+    Geliştirilmiş orman yangını risk skoru hesaplama fonksiyonu
     Parametreler:
     - sicaklik: Celsius cinsinden sıcaklık
     - nem: Yüzde cinsinden nem oranı
@@ -217,8 +246,10 @@ def hesapla_risk_skoru(sicaklik, nem, ruzgar_hizi, yagis_7_gun):
     """
     risk_skoru = 0
     
-    # Sıcaklık faktörü (0-30 puan)
-    if sicaklik >= 30:
+    # Sıcaklık faktörü (0-35 puan) - Daha hassas
+    if sicaklik >= 35:
+        risk_skoru += 35
+    elif sicaklik >= 30:
         risk_skoru += 30
     elif sicaklik >= 25:
         risk_skoru += 25
@@ -231,45 +262,58 @@ def hesapla_risk_skoru(sicaklik, nem, ruzgar_hizi, yagis_7_gun):
     else:
         risk_skoru += 5
     
-    # Nem faktörü (0-25 puan)
-    if nem <= 30:
+    # Nem faktörü (0-30 puan) - Daha hassas
+    if nem <= 25:
+        risk_skoru += 30
+    elif nem <= 35:
         risk_skoru += 25
-    elif nem <= 40:
+    elif nem <= 45:
         risk_skoru += 20
-    elif nem <= 50:
+    elif nem <= 55:
         risk_skoru += 15
-    elif nem <= 60:
+    elif nem <= 65:
         risk_skoru += 10
-    elif nem <= 70:
+    elif nem <= 75:
         risk_skoru += 5
     else:
         risk_skoru += 0
     
-    # Rüzgar hızı faktörü (0-25 puan)
-    if ruzgar_hizi >= 50:
+    # Rüzgar hızı faktörü (0-25 puan) - Daha hassas
+    if ruzgar_hizi >= 40:
         risk_skoru += 25
-    elif ruzgar_hizi >= 40:
-        risk_skoru += 20
     elif ruzgar_hizi >= 30:
-        risk_skoru += 15
+        risk_skoru += 20
     elif ruzgar_hizi >= 20:
+        risk_skoru += 15
+    elif ruzgar_hizi >= 15:
         risk_skoru += 10
     elif ruzgar_hizi >= 10:
         risk_skoru += 5
     else:
         risk_skoru += 0
     
-    # Yağış faktörü (0-20 puan)
-    if yagis_7_gun <= 5:
+    # Yağış faktörü (0-20 puan) - Daha hassas
+    if yagis_7_gun <= 3:
         risk_skoru += 20
-    elif yagis_7_gun <= 10:
+    elif yagis_7_gun <= 8:
         risk_skoru += 15
-    elif yagis_7_gun <= 20:
+    elif yagis_7_gun <= 15:
         risk_skoru += 10
-    elif yagis_7_gun <= 30:
+    elif yagis_7_gun <= 25:
         risk_skoru += 5
     else:
         risk_skoru += 0
+    
+    # Mevsim faktörü (0-10 puan) - Yaz aylarında ek risk
+    import datetime
+    current_month = datetime.datetime.now().month
+    if current_month in [6, 7, 8]:  # Haziran, Temmuz, Ağustos
+        risk_skoru += 10
+    elif current_month in [5, 9]:  # Mayıs, Eylül
+        risk_skoru += 5
+    
+    # Minimum risk skoru (çok düşük skorları engelle)
+    risk_skoru = max(risk_skoru, 15)
     
     return min(risk_skoru, 100)  # Maksimum 100
 
@@ -305,13 +349,22 @@ def hesapla_risk():
         
         risk_skoru = hesapla_risk_skoru(sicaklik, nem, ruzgar_hizi, yagis_7_gun)
         
-        # Risk seviyesi belirleme
-        if risk_skoru >= 70:
+        # Geliştirilmiş risk seviyesi belirleme
+        if risk_skoru >= 75:
+            risk_seviyesi = "Çok Yüksek"
+            renk = "darkred"
+        elif risk_skoru >= 60:
             risk_seviyesi = "Yüksek"
             renk = "red"
-        elif risk_skoru >= 40:
-            risk_seviyesi = "Orta"
+        elif risk_skoru >= 45:
+            risk_seviyesi = "Orta-Yüksek"
             renk = "orange"
+        elif risk_skoru >= 30:
+            risk_seviyesi = "Orta"
+            renk = "yellow"
+        elif risk_skoru >= 20:
+            risk_seviyesi = "Düşük-Orta"
+            renk = "lightgreen"
         else:
             risk_seviyesi = "Düşük"
             renk = "green"
@@ -339,7 +392,14 @@ def cache_stats():
     """
     Cache istatistiklerini döndürür
     """
-    stats = cache_manager.get_cache_stats()
+    # Basit cache istatistikleri
+    stats = {
+        'total_entries': len(cache_data),
+        'valid_entries': len(cache_data),
+        'expired_entries': 0,
+        'lm_analysis_running': False,
+        'lm_analysis_completed': True
+    }
     return jsonify(stats)
 
 @app.route('/clear_cache', methods=['POST'])
@@ -347,7 +407,7 @@ def clear_cache():
     """
     Süresi dolmuş cache'leri temizler
     """
-    cache_manager.clear_expired_cache()
+    clear_expired_cache()
     return jsonify({'message': 'Cache temizlendi'})
 
 @app.route('/analysis_status')
@@ -358,6 +418,13 @@ def analysis_status():
     global initial_analysis_status
     stats = cache_manager.get_cache_stats()
     
+    # Hava durumu güncelleme durumu
+    from lm_risk_analyzer import last_weather_date
+    weather_update_status = {
+        'last_weather_date': last_weather_date,
+        'cache_cleared': last_weather_date is not None
+    }
+    
     return jsonify({
         'cache_stats': stats,
         'server_started': True,
@@ -365,7 +432,8 @@ def analysis_status():
         'lm_analysis_status': {
             'running': stats.get('lm_analysis_running', False),
             'completed': stats.get('lm_analysis_completed', False)
-        }
+        },
+        'weather_update': weather_update_status
     })
 
 @app.route('/get_latest_geojson')
@@ -411,7 +479,7 @@ def analyze_lm():
         name = data.get('name', 'Orman Alanı')
 
         # Önce cache'den kontrol et
-        cached_result = cache_manager.get_cached_analysis(
+        cached_result = get_cached_analysis(
             centroid_lat, centroid_lon, area, landuse, name
         )
         
@@ -439,7 +507,7 @@ def analyze_lm():
         )
         
         # Sonucu cache'e kaydet
-        cache_manager.cache_analysis(
+        cache_analysis(
             centroid_lat, centroid_lon, area, landuse, name, combined_risk
         )
         
@@ -506,6 +574,23 @@ if __name__ == '__main__':
     # Auto updater'ı başlat
     auto_updater.start()
     print("✓ Auto updater başlatıldı")
+    
+    # Günlük cache temizleme scheduler'ı
+    def daily_cache_cleanup():
+        while True:
+            try:
+                time.sleep(3600)  # Her saat kontrol et
+                now = datetime.now()
+                if now.hour == 0:  # Gece yarısı
+                    print("🕛 Günlük cache temizleme başlatılıyor...")
+                    clear_expired_cache()
+                    print("✅ Cache temizleme tamamlandı")
+            except Exception as e:
+                print(f"Cache temizleme hatası: {e}")
+    
+    cleanup_thread = threading.Thread(target=daily_cache_cleanup, daemon=True)
+    cleanup_thread.start()
+    print("✓ Günlük cache temizleme başlatıldı")
     
     # Başlangıç analizini garanti et
     print("✓ Başlangıç analizi başlatılıyor...")
