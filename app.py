@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, make_response, send_file
 import requests
 from datetime import datetime, timedelta
 import os
@@ -9,6 +9,8 @@ import threading
 import concurrent.futures
 import time
 import json
+import hashlib
+from functools import lru_cache
 
 # Environment variables yükle
 try:
@@ -19,18 +21,14 @@ except ImportError:
 
 app = Flask(__name__)
 
-# Global analiz durumu
-initial_analysis_status = {
-    'running': False,
-    'completed': False,
-    'total_areas': 0,
-    'analyzed_count': 0,
-    'cached_count': 0
-}
+# Global değişkenler
+ANALYZED_GEOJSON_PATH = 'static/analyzed_data.json'
+ANALYSIS_LOCK = threading.Lock()
+LAST_ANALYSIS_TIME = None
+ANALYSIS_IN_PROGRESS = False
 
-# WeatherAPI.com API anahtarı - environment variable'dan al
+# WeatherAPI.com API anahtarı
 WEATHERAPI_KEY = os.environ.get('WEATHERAPI_KEY', "ca1b321f6c3948438c8181905250607")
-# Buraya API anahtarınızı ekleyin
 
 # Groq API kontrolü
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
@@ -39,153 +37,133 @@ if not GROQ_API_KEY:
 else:
     print("✅ GROQ_API_KEY bulundu. LM analizi aktif.")
 
-# Not: forsts.geojson dosyasını 'static' klasörüne koymalısınız.
-
 # Performans optimizasyonu için global değişkenler
-weather_cache = {}  # Hava durumu cache'i
+weather_cache = {}
 weather_cache_lock = threading.Lock()
-MAX_WORKERS = 4  # Paralel işlem sayısı
+MAX_WORKERS = 2  # API limiti için azaltıldı
+API_DELAY = 0.7  # 100 req/min için güvenli gecikme
 
-# Rate limiting için
+# Rate limiting
 last_request_time = 0
 request_lock = threading.Lock()
-MIN_REQUEST_INTERVAL = 0.6  # Minimum 0.6 saniye aralık (dakikada 100 istek sınırı için)
+request_queue = []
 
-def check_weather_rate_limit():
-    """
-    WeatherAPI.com rate limiting kontrolü
-    """
+def check_api_rate_limit():
+    """API rate limiting kontrolü - dakikada maksimum 100 istek"""
     global last_request_time
     with request_lock:
         current_time = time.time()
         time_since_last = current_time - last_request_time
-        if time_since_last < MIN_REQUEST_INTERVAL:
-            sleep_time = MIN_REQUEST_INTERVAL - time_since_last
+        
+        # Minimum 0.6 saniye bekle (100 req/min = 1.67 req/sec)
+        if time_since_last < API_DELAY:
+            sleep_time = API_DELAY - time_since_last
             time.sleep(sleep_time)
+        
         last_request_time = time.time()
 
-def get_weather_data_for_coordinates(lat, lon):
-    """
-    Belirli koordinatlar için WeatherAPI.com'dan hava durumu verilerini çeker
-    Sunucu başlatıldığında 1 gün önceki 12:00'ın verilerini alır
-    Performans için cache kullanır
-    """
-    # Cache key oluştur
+def get_weather_data_for_coordinates(lat, lon, use_cache=True):
+    """Belirli koordinatlar için hava durumu verilerini çeker"""
     cache_key = f"{lat:.4f}_{lon:.4f}"
     
-    # Cache'den kontrol et
-    with weather_cache_lock:
-        if cache_key in weather_cache:
-            cache_time, weather_data = weather_cache[cache_key]
-            # Cache 1 saat geçerli
-            if time.time() - cache_time < 3600:
-                return weather_data, None
+    # Cache kontrolü
+    if use_cache:
+        with weather_cache_lock:
+            if cache_key in weather_cache:
+                cache_time, weather_data = weather_cache[cache_key]
+                # 23 saat cache (günlük güncelleme için)
+                if time.time() - cache_time < 82800:  # 23 saat
+                    return weather_data, None
     
     try:
-        # Rate limiting kontrolü
-        check_weather_rate_limit()
+        # Rate limit kontrolü
+        check_api_rate_limit()
         
-        # 1 gün önceki 12:00'ı hesapla
-        yesterday = datetime.now() - timedelta(days=1)
-        yesterday_noon = yesterday.replace(hour=12, minute=0, second=0, microsecond=0)
-        weather_date = yesterday_noon.strftime('%Y-%m-%d')
+        # Bugünün 12:00 verisi
+        today = datetime.now()
+        today_noon = today.replace(hour=12, minute=0, second=0, microsecond=0)
         
-        # Yeni hava durumu tarihi kontrolü
-        if update_weather_date(weather_date):
-            print(f"🔄 Yeni hava durumu verisi tespit edildi: {weather_date}")
+        # Eğer henüz 12:00 olmadıysa dünün verisini al
+        if today.hour < 12:
+            today_noon = today_noon - timedelta(days=1)
         
-        # WeatherAPI.com çağrısı - Geçmiş veri için
-        url = "http://api.weatherapi.com/v1/history.json"
-        params = {
-            'key': WEATHERAPI_KEY,
-            'q': f"{lat},{lon}",
-            'dt': weather_date,
-            'aqi': 'no'
-        }
+        weather_date = today_noon.strftime('%Y-%m-%d')
         
-        response = requests.get(url, params=params, timeout=5)  # Timeout azaltıldı
-        
-        if response.status_code != 200:
-            error_data = response.json()
-            print(f"WeatherAPI Hatası ({response.status_code}): {error_data.get('error', {}).get('message', 'Bilinmeyen hata')}")
-            # Hata durumunda mevcut veriyi kullan
-            return get_current_weather_data(lat, lon)
-        
-        data = response.json()
-        
-        # Geçmiş veri varsa kullan, yoksa mevcut veriyi al
-        if 'forecast' in data and 'forecastday' in data['forecast'] and len(data['forecast']['forecastday']) > 0:
-            forecast_day = data['forecast']['forecastday'][0]
-            hour_data = forecast_day['hour'][12]  # 12:00 verisi
-            
-            weather_info = {
-                'sicaklik': hour_data['temp_c'],
-                'nem': hour_data['humidity'],
-                'ruzgar_hizi': hour_data['wind_kph'],
-                'yagis_7_gun': hour_data.get('precip_mm', 0)
+        # Saat 12:00'dan sonraysa güncel veri, öncesiyse history API
+        if today.hour >= 12 and today_noon.date() == today.date():
+            # Güncel veri için current API kullan
+            url = "http://api.weatherapi.com/v1/current.json"
+            params = {
+                'key': WEATHERAPI_KEY,
+                'q': f"{lat},{lon}",
+                'aqi': 'no'
             }
             
-            # Cache'e kaydet
-            with weather_cache_lock:
-                weather_cache[cache_key] = (time.time(), weather_info)
+            response = requests.get(url, params=params, timeout=5)
             
-            print(f"1 gün önceki 12:00 verisi kullanıldı: {lat}, {lon}")
-            return weather_info, None
+            if response.status_code != 200:
+                error_data = response.json()
+                print(f"WeatherAPI Hatası ({response.status_code}): {error_data.get('error', {}).get('message', 'Bilinmeyen hata')}")
+                return None, "API Hatası"
+            
+            data = response.json()
+            current = data['current']
+            
+            weather_info = {
+                'sicaklik': current['temp_c'],
+                'nem': current['humidity'],
+                'ruzgar_hizi': current['wind_kph'],
+                'yagis_7_gun': current.get('precip_mm', 0),
+                'data_time': today_noon.isoformat()
+            }
         else:
-            # Geçmiş veri yoksa mevcut veriyi al
-            return get_current_weather_data(lat, lon)
+            # Geçmiş veri için history API kullan
+            url = "http://api.weatherapi.com/v1/history.json"
+            params = {
+                'key': WEATHERAPI_KEY,
+                'q': f"{lat},{lon}",
+                'dt': weather_date,
+                'aqi': 'no'
+            }
             
-    except requests.exceptions.Timeout:
-        print(f"API timeout: {lat}, {lon}")
-        return get_current_weather_data(lat, lon)
-    except requests.exceptions.RequestException as e:
-        print(f"API bağlantı hatası: {str(e)}")
-        return get_current_weather_data(lat, lon)
-    except Exception as e:
-        print(f"Veri çekme hatası: {str(e)}")
-        return get_current_weather_data(lat, lon)
-
-def get_current_weather_data(lat, lon):
-    """
-    Mevcut hava durumu verilerini çeker (fallback için)
-    """
-    try:
-        # Rate limiting kontrolü
-        check_weather_rate_limit()
+            response = requests.get(url, params=params, timeout=5)
+            
+            if response.status_code != 200:
+                error_data = response.json()
+                print(f"WeatherAPI Hatası ({response.status_code}): {error_data.get('error', {}).get('message', 'Bilinmeyen hata')}")
+                return None, "API Hatası"
+            
+            data = response.json()
+            
+            if 'forecast' in data and 'forecastday' in data['forecast'] and len(data['forecast']['forecastday']) > 0:
+                forecast_day = data['forecast']['forecastday'][0]
+                hour_data = forecast_day['hour'][12]  # 12:00 verisi
+                
+                weather_info = {
+                    'sicaklik': hour_data['temp_c'],
+                    'nem': hour_data['humidity'],
+                    'ruzgar_hizi': hour_data['wind_kph'],
+                    'yagis_7_gun': hour_data.get('precip_mm', 0),
+                    'data_time': today_noon.isoformat()
+                }
+            else:
+                return None, "12:00 verisi bulunamadı"
         
-        url = "http://api.weatherapi.com/v1/current.json"
-        params = {
-            'key': WEATHERAPI_KEY,
-            'q': f"{lat},{lon}",
-            'aqi': 'no'
-        }
+        # Cache'e kaydet
+        with weather_cache_lock:
+            weather_cache[cache_key] = (time.time(), weather_info)
         
-        response = requests.get(url, params=params, timeout=5)  # Timeout azaltıldı
-        data = response.json()
-        
-        if response.status_code != 200:
-            return None, f"WeatherAPI Hatası: {data.get('error', {}).get('message', 'Bilinmeyen hata')}"
-        
-        current = data['current']
-        
-        weather_info = {
-            'sicaklik': current['temp_c'],
-            'nem': current['humidity'],
-            'ruzgar_hizi': current['wind_kph'],
-            'yagis_7_gun': 0
-        }
-        
+        print(f"Hava durumu alındı: {weather_date} 12:00 - {lat:.4f}, {lon:.4f}")
         return weather_info, None
         
     except Exception as e:
-        return None, f"Veri çekme hatası: {str(e)}"
+        print(f"Veri çekme hatası: {str(e)}")
+        return None, str(e)
 
 def analyze_single_area(feature_data):
-    """
-    Tek bir alanı analiz eder (paralel işlem için)
-    """
+    """Tek bir alanı analiz eder"""
     try:
-        i, feature = feature_data
+        feature = feature_data
         properties = feature.get('properties', {})
         centroid_lat = properties.get('centroid_lat')
         centroid_lon = properties.get('centroid_lon')
@@ -202,11 +180,15 @@ def analyze_single_area(feature_data):
         )
         
         if cached_result:
-            return {'type': 'cached', 'index': i, 'name': name}
+            # Cache'den gelen veriyi direkt properties'e ekle
+            for key, value in cached_result.items():
+                properties[key] = value
+            return feature
         
         # Hava durumu verisi
         weather_data, error = get_weather_data_for_coordinates(centroid_lat, centroid_lon)
         if error or weather_data is None:
+            print(f"Hava durumu hatası {name}: {error}")
             return None
         
         # LM analizi
@@ -227,497 +209,232 @@ def analyze_single_area(feature_data):
             centroid_lat, centroid_lon, area, landuse, name, combined_risk
         )
         
-        return {'type': 'analyzed', 'index': i, 'name': name}
+        # Sonuçları properties'e ekle
+        for key, value in combined_risk.items():
+            properties[key] = value
+        
+        properties['analyzed_at'] = datetime.now().isoformat()
+        
+        return feature
         
     except Exception as e:
-        print(f"Analiz hatası (alan {i}): {str(e)}")
+        print(f"Analiz hatası: {str(e)}")
         return None
 
-def hesapla_risk_skoru(sicaklik, nem, ruzgar_hizi, yagis_7_gun):
-    """
-    Geliştirilmiş orman yangını risk skoru hesaplama fonksiyonu
-    Parametreler:
-    - sicaklik: Celsius cinsinden sıcaklık
-    - nem: Yüzde cinsinden nem oranı
-    - ruzgar_hizi: km/h cinsinden rüzgar hızı
-    - yagis_7_gun: mm cinsinden son 7 günlük yağış miktarı
+def analyze_all_areas_backend(force_refresh=False):
+    """Tüm alanları backend'de analiz eder ve sonucu kaydeder"""
+    global ANALYSIS_IN_PROGRESS, LAST_ANALYSIS_TIME
     
-    Döndürür: 0-100 arası risk skoru
-    """
-    risk_skoru = 0
+    with ANALYSIS_LOCK:
+        if ANALYSIS_IN_PROGRESS:
+            print("Analiz zaten devam ediyor...")
+            return False
+        ANALYSIS_IN_PROGRESS = True
     
-    # Sıcaklık faktörü (0-35 puan) - Daha hassas
-    if sicaklik >= 35:
-        risk_skoru += 35
-    elif sicaklik >= 30:
-        risk_skoru += 30
-    elif sicaklik >= 25:
-        risk_skoru += 25
-    elif sicaklik >= 20:
-        risk_skoru += 20
-    elif sicaklik >= 15:
-        risk_skoru += 15
-    elif sicaklik >= 10:
-        risk_skoru += 10
-    else:
-        risk_skoru += 5
-    
-    # Nem faktörü (0-30 puan) - Daha hassas
-    if nem <= 25:
-        risk_skoru += 30
-    elif nem <= 35:
-        risk_skoru += 25
-    elif nem <= 45:
-        risk_skoru += 20
-    elif nem <= 55:
-        risk_skoru += 15
-    elif nem <= 65:
-        risk_skoru += 10
-    elif nem <= 75:
-        risk_skoru += 5
-    else:
-        risk_skoru += 0
-    
-    # Rüzgar hızı faktörü (0-25 puan) - Daha hassas
-    if ruzgar_hizi >= 40:
-        risk_skoru += 25
-    elif ruzgar_hizi >= 30:
-        risk_skoru += 20
-    elif ruzgar_hizi >= 20:
-        risk_skoru += 15
-    elif ruzgar_hizi >= 15:
-        risk_skoru += 10
-    elif ruzgar_hizi >= 10:
-        risk_skoru += 5
-    else:
-        risk_skoru += 0
-    
-    # Yağış faktörü (0-20 puan) - Daha hassas
-    if yagis_7_gun <= 3:
-        risk_skoru += 20
-    elif yagis_7_gun <= 8:
-        risk_skoru += 15
-    elif yagis_7_gun <= 15:
-        risk_skoru += 10
-    elif yagis_7_gun <= 25:
-        risk_skoru += 5
-    else:
-        risk_skoru += 0
-    
-    # Mevsim faktörü (0-10 puan) - Yaz aylarında ek risk
-    import datetime
-    current_month = datetime.datetime.now().month
-    if current_month in [6, 7, 8]:  # Haziran, Temmuz, Ağustos
-        risk_skoru += 10
-    elif current_month in [5, 9]:  # Mayıs, Eylül
-        risk_skoru += 5
-    
-    # Minimum risk skoru (çok düşük skorları engelle)
-    risk_skoru = max(risk_skoru, 15)
-    
-    return min(risk_skoru, 100)  # Maksimum 100
+    try:
+        print("=== BACKEND ANALİZİ BAŞLATILIYOR ===")
+        print(f"Tarih/Saat: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Force Refresh: {force_refresh}")
+        start_time = time.time()
+        
+        # Force refresh ise cache'i temizle
+        if force_refresh:
+            print("Cache temizleniyor...")
+            with weather_cache_lock:
+                weather_cache.clear()
+            cache_manager.clear_expired_cache()
+        
+        # GeoJSON dosyasını yükle
+        geojson_path = 'static/export_with_risk_latest.geojson'
+        if not os.path.exists(geojson_path):
+            print(f"GeoJSON dosyası bulunamadı: {geojson_path}")
+            return False
+            
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+        
+        total_features = len(geojson_data['features'])
+        print(f"Toplam {total_features} alan analiz edilecek...")
+        print(f"Hedef: Bugünün 12:00 verisi")
+        
+        analyzed_features = []
+        cached_count = 0
+        new_count = 0
+        failed_count = 0
+        
+        # Sıralı analiz (API limiti için)
+        for i, feature in enumerate(geojson_data['features']):
+            if i % 10 == 0:
+                print(f"İlerleme: {i}/{total_features} (Cache: {cached_count}, Yeni: {new_count}, Hata: {failed_count})")
+            
+            # Force refresh değilse ve önceki analiz varsa kontrol et
+            if not force_refresh and all(key in feature.get('properties', {}) for key in ['combined_risk_score', 'combined_risk_level', 'weather_data']):
+                # Son 23 saat içinde analiz edilmişse atla
+                analyzed_at = feature['properties'].get('analyzed_at')
+                if analyzed_at:
+                    analysis_time = datetime.fromisoformat(analyzed_at)
+                    if (datetime.now() - analysis_time).total_seconds() < 82800:  # 23 saat
+                        cached_count += 1
+                        analyzed_features.append(feature)
+                        continue
+            
+            # Yeni analiz
+            result = analyze_single_area(feature)
+            if result:
+                analyzed_features.append(result)
+                new_count += 1
+            else:
+                failed_count += 1
+                # Hatalı alanı da ekle ama analiz edilmemiş olarak işaretle
+                feature['properties']['analysis_failed'] = True
+                analyzed_features.append(feature)
+            
+            # API rate limit için bekleme
+            if new_count > 0 and new_count % 5 == 0:
+                time.sleep(1)  # Her 5 yeni analizde 1 saniye bekle
+        
+        # Analiz edilmiş veriyi kaydet
+        analyzed_data = {
+            'type': 'FeatureCollection',
+            'features': analyzed_features,
+            'metadata': {
+                'total_areas': total_features,
+                'analyzed_areas': len(analyzed_features) - failed_count,
+                'cached_areas': cached_count,
+                'new_analyses': new_count,
+                'failed_analyses': failed_count,
+                'analysis_date': datetime.now().isoformat(),
+                'weather_date': datetime.now().replace(hour=12, minute=0, second=0).isoformat(),
+                'analysis_duration': time.time() - start_time
+            }
+        }
+        
+        # Dosyaya kaydet
+        with open(ANALYZED_GEOJSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(analyzed_data, f, ensure_ascii=False, indent=2)
+        
+        LAST_ANALYSIS_TIME = datetime.now()
+        
+        print(f"""
+=== ANALİZ TAMAMLANDI ===
+Toplam: {total_features} alan
+Cache'den: {cached_count} alan
+Yeni analiz: {new_count} alan
+Başarısız: {failed_count} alan
+Süre: {time.time() - start_time:.2f} saniye
+Veri zamanı: Bugün 12:00
+========================
+        """)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Backend analiz hatası: {str(e)}")
+        return False
+    finally:
+        ANALYSIS_IN_PROGRESS = False
 
 @app.route('/')
 def home():
     return render_template('index.html')
 
-@app.route('/get_weather', methods=['POST'])
-def get_weather():
+@app.route('/get_analyzed_data')
+def get_analyzed_data():
+    """Analiz edilmiş veriyi döndürür"""
     try:
-        data = request.get_json()
-        lat = data.get('lat', 41.0082)  # İstanbul varsayılan
-        lon = data.get('lon', 28.9784)  # İstanbul varsayılan
+        # Analiz edilmiş dosya var mı kontrol et
+        if not os.path.exists(ANALYZED_GEOJSON_PATH):
+            # Yoksa analizi başlat
+            analyze_thread = threading.Thread(target=analyze_all_areas_backend)
+            analyze_thread.start()
+            
+            return jsonify({
+                'status': 'analyzing',
+                'message': 'Analiz başlatıldı, lütfen bekleyin...'
+            }), 202
         
-        weather_data, error = get_weather_data_for_coordinates(lat, lon)
+        # Dosya yaşını kontrol et
+        file_age = time.time() - os.path.getmtime(ANALYZED_GEOJSON_PATH)
+        if file_age > 3600:  # 1 saatten eski
+            # Arka planda yeni analiz başlat
+            if not ANALYSIS_IN_PROGRESS:
+                analyze_thread = threading.Thread(target=analyze_all_areas_backend)
+                analyze_thread.start()
         
-        if error:
-            return jsonify({'hata': error}), 400
-        
-        return jsonify(weather_data)
+        # Mevcut dosyayı gönder
+        return send_file(ANALYZED_GEOJSON_PATH, mimetype='application/json')
         
     except Exception as e:
-        return jsonify({'hata': str(e)}), 400
-
-@app.route('/hesapla_risk', methods=['POST'])
-def hesapla_risk():
-    try:
-        data = request.get_json()
-        sicaklik = float(data['sicaklik'])
-        nem = float(data['nem'])
-        ruzgar_hizi = float(data['ruzgar_hizi'])
-        yagis_7_gun = float(data['yagis_7_gun'])
-        
-        risk_skoru = hesapla_risk_skoru(sicaklik, nem, ruzgar_hizi, yagis_7_gun)
-        
-        # Geliştirilmiş risk seviyesi belirleme
-        if risk_skoru >= 75:
-            risk_seviyesi = "Çok Yüksek"
-            renk = "darkred"
-        elif risk_skoru >= 60:
-            risk_seviyesi = "Yüksek"
-            renk = "red"
-        elif risk_skoru >= 45:
-            risk_seviyesi = "Orta-Yüksek"
-            renk = "orange"
-        elif risk_skoru >= 30:
-            risk_seviyesi = "Orta"
-            renk = "yellow"
-        elif risk_skoru >= 20:
-            risk_seviyesi = "Düşük-Orta"
-            renk = "lightgreen"
-        else:
-            risk_seviyesi = "Düşük"
-            renk = "green"
-        
-        return jsonify({
-            'risk_skoru': risk_skoru,
-            'risk_seviyesi': risk_seviyesi,
-            'renk': renk
-        })
-    except Exception as e:
-        return jsonify({'hata': str(e)}), 400
-
-@app.route('/status')
-def status():
-    """
-    Auto updater durumunu kontrol eder
-    """
-    return jsonify({
-        'auto_updater_running': auto_updater.is_running,
-        'last_update': auto_updater.last_update if hasattr(auto_updater, 'last_update') else None
-    })
-
-@app.route('/cache_stats')
-def cache_stats():
-    """
-    Cache istatistiklerini döndürür
-    """
-    # Basit cache istatistikleri
-    stats = {
-        'total_entries': len(cache_data),
-        'valid_entries': len(cache_data),
-        'expired_entries': 0,
-        'lm_analysis_running': False,
-        'lm_analysis_completed': True
-    }
-    return jsonify(stats)
-
-@app.route('/clear_cache', methods=['POST'])
-def clear_cache():
-    """
-    Süresi dolmuş cache'leri temizler
-    """
-    clear_expired_cache()
-    return jsonify({'message': 'Cache temizlendi'})
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/analysis_status')
 def analysis_status():
-    """
-    Başlangıç analizi durumunu döndürür
-    """
-    global initial_analysis_status
-    stats = cache_manager.get_cache_stats()
+    """Analiz durumunu döndürür"""
+    try:
+        metadata = None
+        if os.path.exists(ANALYZED_GEOJSON_PATH):
+            with open(ANALYZED_GEOJSON_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                metadata = data.get('metadata', {})
+        
+        return jsonify({
+            'analyzing': ANALYSIS_IN_PROGRESS,
+            'last_analysis': LAST_ANALYSIS_TIME.isoformat() if LAST_ANALYSIS_TIME else None,
+            'metadata': metadata,
+            'cache_stats': cache_manager.get_cache_stats()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/trigger_analysis', methods=['POST'])
+def trigger_analysis():
+    """Manuel olarak analiz başlatır"""
+    if ANALYSIS_IN_PROGRESS:
+        return jsonify({
+            'status': 'already_running',
+            'message': 'Analiz zaten devam ediyor'
+        }), 409
     
-    # Hava durumu güncelleme durumu
-    from lm_risk_analyzer import last_weather_date
-    weather_update_status = {
-        'last_weather_date': last_weather_date,
-        'cache_cleared': last_weather_date is not None
-    }
+    analyze_thread = threading.Thread(target=analyze_all_areas_backend)
+    analyze_thread.start()
     
     return jsonify({
-        'cache_stats': stats,
-        'server_started': True,
-        'initial_analysis': initial_analysis_status,
-        'lm_analysis_status': {
-            'running': stats.get('lm_analysis_running', False),
-            'completed': stats.get('lm_analysis_completed', False)
-        },
-        'weather_update': weather_update_status
+        'status': 'started',
+        'message': 'Analiz başlatıldı'
     })
 
-@app.route('/get_latest_geojson')
-def get_latest_geojson():
-    """En güncel GeoJSON dosya adını döndür"""
-    try:
-        # static klasöründeki GeoJSON dosyalarını kontrol et
-        static_dir = os.path.join(os.path.dirname(__file__), 'static')
-        geojson_files = [f for f in os.listdir(static_dir) if f.endswith('.geojson')]
-        
-        # En güncel dosyayı bul (export_with_risk_latest.geojson varsa onu kullan)
-        if 'export_with_risk_latest.geojson' in geojson_files:
-            filename = 'export_with_risk_latest.geojson'
-        elif 'export_with_risk_auto' in str(geojson_files):
-            # export_with_risk_auto ile başlayan en güncel dosyayı bul
-            auto_files = [f for f in geojson_files if f.startswith('export_with_risk_auto')]
-            if auto_files:
-                filename = sorted(auto_files)[-1]  # En güncel dosya
-            else:
-                filename = 'export.geojson'  # Fallback
+@app.route('/clear_cache', methods=['POST'])
+def clear_cache():
+    """Cache'i temizler"""
+    clear_expired_cache()
+    with weather_cache_lock:
+        weather_cache.clear()
+    return jsonify({'message': 'Cache temizlendi'})
+
+# Static dosyalar için cache headers
+@app.after_request
+def add_cache_headers(response):
+    if request.path.startswith('/static/'):
+        if request.path.endswith('.json'):
+            response.headers['Cache-Control'] = 'no-cache, must-revalidate'
         else:
-            filename = 'export.geojson'  # Fallback
-        
-        return jsonify({
-            'filename': filename,
-            'url': f'/static/{filename}'
-        })
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'filename': 'export.geojson',
-            'url': '/static/export.geojson'
-        }), 500
+            response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
 
-@app.route('/analyze_lm', methods=['POST'])
-def analyze_lm():
-    try:
-        data = request.get_json()
-        centroid_lat = float(data['centroid_lat'])
-        centroid_lon = float(data['centroid_lon'])
-        area = float(data.get('area', 0))
-        landuse = data.get('landuse', 'forest')
-        name = data.get('name', 'Orman Alanı')
-
-        # Önce cache'den kontrol et
-        cached_result = get_cached_analysis(
-            centroid_lat, centroid_lon, area, landuse, name
-        )
-        
-        if cached_result:
-            response = jsonify(cached_result)
-            response.headers['X-Cache-Hit'] = 'true'
-            return response
-
-        area_info = {
-            'landuse': landuse,
-            'area': area,
-            'name': name
-        }
-
-        # Hava durumu verisini çek
-        weather_data, error = get_weather_data_for_coordinates(centroid_lat, centroid_lon)
-        if error or weather_data is None:
-            return jsonify({'hata': error or 'Hava durumu verisi alınamadı'}), 400
-
-        # LM analizini çalıştır
-        combined_risk = lm_analyzer.analyze_forest_area(
-            (centroid_lat, centroid_lon),
-            weather_data,
-            area_info
-        )
-        
-        # Sonucu cache'e kaydet
-        cache_analysis(
-            centroid_lat, centroid_lon, area, landuse, name, combined_risk
-        )
-        
-        return jsonify(combined_risk)
-    except Exception as e:
-        return jsonify({'hata': str(e)}), 400
-
-@app.route('/analyze_all_areas', methods=['POST'])
-def analyze_all_areas():
-    """
-    Tüm alanları analiz eder ve sonuçları döndürür
-    """
-    try:
-        # GeoJSON dosyasını oku
-        geojson_path = 'static/export_with_risk_latest.geojson'
-        if not os.path.exists(geojson_path):
-            return jsonify({'error': 'GeoJSON dosyası bulunamadı'}), 404
-            
-        with open(geojson_path, 'r', encoding='utf-8') as f:
-            geojson_data = json.load(f)
-        
-        results = []
-        total_areas = len(geojson_data['features'])
-        
-        print(f"Tüm alanlar analiz ediliyor: {total_areas} alan")
-        
-        for i, feature in enumerate(geojson_data['features']):
-            try:
-                properties = feature.get('properties', {})
-                centroid_lat = properties.get('centroid_lat')
-                centroid_lon = properties.get('centroid_lon')
-                area = properties.get('area', 0)
-                landuse = properties.get('landuse', 'forest')
-                name = properties.get('name', 'Orman Alanı')
-                
-                if centroid_lat is None or centroid_lon is None:
-                    continue
-                
-                # Cache kontrolü
-                cached_result = get_cached_analysis(
-                    centroid_lat, centroid_lon, area, landuse, name
-                )
-                
-                if cached_result:
-                    results.append({
-                        'index': i,
-                        'name': name,
-                        'data': cached_result,
-                        'cached': True
-                    })
-                    print(f"Cache hit: {i+1}/{total_areas} - {name}")
-                else:
-                    # Yeni analiz
-                    area_info = {
-                        'landuse': landuse,
-                        'area': area,
-                        'name': name
-                    }
-                    
-                    # Hava durumu verisini çek
-                    weather_data, error = get_weather_data_for_coordinates(centroid_lat, centroid_lon)
-                    if error or weather_data is None:
-                        print(f"Hava durumu hatası: {name} - {error}")
-                        continue
-                    
-                    # LM analizini çalıştır
-                    combined_risk = lm_analyzer.analyze_forest_area(
-                        (centroid_lat, centroid_lon),
-                        weather_data,
-                        area_info
-                    )
-                    
-                    # Sonucu cache'e kaydet
-                    cache_analysis(
-                        centroid_lat, centroid_lon, area, landuse, name, combined_risk
-                    )
-                    
-                    results.append({
-                        'index': i,
-                        'name': name,
-                        'data': combined_risk,
-                        'cached': False
-                    })
-                    
-                    print(f"Analiz edildi: {i+1}/{total_areas} - {name}")
-                
-            except Exception as e:
-                print(f"Alan analiz hatası ({name}): {str(e)}")
-                continue
-        
-        print(f"Tüm analizler tamamlandı: {len(results)} alan")
-        return jsonify({
-            'success': True,
-            'total_areas': total_areas,
-            'analyzed_areas': len(results),
-            'results': results
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/get_cached_analyses')
-def get_cached_analyses():
-    """
-    Sadece cache'deki analizleri döndürür
-    """
-    try:
-        # GeoJSON dosyasını oku
-        geojson_path = 'static/export_with_risk_latest.geojson'
-        if not os.path.exists(geojson_path):
-            return jsonify({'error': 'GeoJSON dosyası bulunamadı'}), 404
-            
-        with open(geojson_path, 'r', encoding='utf-8') as f:
-            geojson_data = json.load(f)
-        
-        cached_results = []
-        
-        for i, feature in enumerate(geojson_data['features']):
-            try:
-                properties = feature.get('properties', {})
-                centroid_lat = properties.get('centroid_lat')
-                centroid_lon = properties.get('centroid_lon')
-                area = properties.get('area', 0)
-                landuse = properties.get('landuse', 'forest')
-                name = properties.get('name', 'Orman Alanı')
-                
-                if centroid_lat is None or centroid_lon is None:
-                    continue
-                
-                # Sadece cache'den kontrol et
-                cached_result = get_cached_analysis(
-                    centroid_lat, centroid_lon, area, landuse, name
-                )
-                
-                if cached_result:
-                    cached_results.append({
-                        'index': i,
-                        'name': name,
-                        'data': cached_result,
-                        'cached': True
-                    })
-                    print(f"Cache'den alındı: {name}")
-                
-            except Exception as e:
-                print(f"Cache kontrol hatası ({name}): {str(e)}")
-                continue
-        
-        print(f"Cache'den {len(cached_results)} alan bulundu")
-        return jsonify({
-            'success': True,
-            'total_areas': len(geojson_data['features']),
-            'cached_areas': len(cached_results),
-            'results': cached_results
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-def initial_analysis():
-    print("DEBUG: Başlangıç analizi fonksiyonu çağrıldı")
-    global initial_analysis_status
-    try:
-        geojson_path = 'static/export_with_risk_latest.geojson'
-        if not os.path.exists(geojson_path):
-            print(f"GeoJSON dosyası bulunamadı: {geojson_path}")
-            return
-            
-        with open(geojson_path, 'r', encoding='utf-8') as f:
-            geojson_data = json.load(f)
-            
-        initial_analysis_status['running'] = True
-        initial_analysis_status['total_areas'] = len(geojson_data['features'])
-        initial_analysis_status['analyzed_count'] = 0
-        initial_analysis_status['cached_count'] = 0
-        
-        print(f"Başlangıç analizi başlatılıyor... {len(geojson_data['features'])} alan analiz edilecek")
-        
-        analyzed_count = 0
-        cached_count = 0
-        
-        # Paralel analiz için ThreadPoolExecutor kullan
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Tüm alanları analiz için hazırla
-            feature_data = [(i, feature) for i, feature in enumerate(geojson_data['features'])]
-            
-            # Paralel olarak analiz et
-            future_to_feature = {executor.submit(analyze_single_area, fd): fd for fd in feature_data}
-            
-            for future in concurrent.futures.as_completed(future_to_feature):
-                result = future.result()
-                if result:
-                    if result['type'] == 'cached':
-                        cached_count += 1
-                        initial_analysis_status['cached_count'] = cached_count
-                        if result['index'] % 20 == 0:
-                            print(f"Cache hit: {result['index']+1}/{len(geojson_data['features'])} - {result['name']}")
-                    else:
-                        analyzed_count += 1
-                        initial_analysis_status['analyzed_count'] = analyzed_count
-                        if result['index'] % 20 == 0:
-                            print(f"Analiz edildi: {result['index']+1}/{len(geojson_data['features'])} - {result['name']}")
-        
-        initial_analysis_status['running'] = False
-        initial_analysis_status['completed'] = True
-        print(f"Başlangıç analizi tamamlandı! {analyzed_count} yeni analiz, {cached_count} cache hit")
-        
-    except Exception as e:
-        initial_analysis_status['running'] = False
-        print(f"Başlangıç analizi hatası: {str(e)}")
-    print("DEBUG: Başlangıç analizi fonksiyonu bitti")
+def startup_analysis():
+    """Sunucu başladığında analizi kontrol et"""
+    time.sleep(2)  # Flask'ın başlamasını bekle
+    
+    if not os.path.exists(ANALYZED_GEOJSON_PATH):
+        print("Analiz dosyası bulunamadı, yeni analiz başlatılıyor...")
+        analyze_all_areas_backend()
+    else:
+        file_age = time.time() - os.path.getmtime(ANALYZED_GEOJSON_PATH)
+        if file_age > 3600:
+            print(f"Analiz dosyası {file_age/3600:.1f} saat eski, yenileniyor...")
+            analyze_all_areas_backend()
+        else:
+            print(f"Güncel analiz mevcut ({file_age/60:.1f} dakika önce)")
 
 if __name__ == '__main__':
     print("=== ORMAN ERKEN UYARI SİSTEMİ BAŞLATILIYOR ===")
@@ -726,31 +443,66 @@ if __name__ == '__main__':
     auto_updater.start()
     print("✓ Auto updater başlatıldı")
     
-    # Günlük cache temizleme scheduler'ı
-    def daily_cache_cleanup():
+    # Başlangıç analizini başlat
+    def startup_analysis():
+        time.sleep(2)  # Flask'ın başlamasını bekle
+        
+        if not os.path.exists(ANALYZED_GEOJSON_PATH):
+            print("Analiz dosyası bulunamadı, yeni analiz başlatılıyor...")
+            analyze_all_areas_backend()
+        else:
+            # Dosyanın metadata'sını kontrol et
+            try:
+                with open(ANALYZED_GEOJSON_PATH, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    metadata = data.get('metadata', {})
+                    
+                if metadata.get('analysis_date'):
+                    analysis_date = datetime.fromisoformat(metadata['analysis_date'])
+                    hours_old = (datetime.now() - analysis_date).total_seconds() / 3600
+                    
+                    if hours_old > 24:
+                        print(f"Analiz {hours_old:.1f} saat eski, yenileniyor...")
+                        analyze_all_areas_backend(force_refresh=True)
+                    else:
+                        print(f"Güncel analiz mevcut ({hours_old:.1f} saat önce)")
+                else:
+                    print("Metadata bulunamadı, yeni analiz başlatılıyor...")
+                    analyze_all_areas_backend()
+            except Exception as e:
+                print(f"Dosya okuma hatası: {e}, yeni analiz başlatılıyor...")
+                analyze_all_areas_backend()
+    
+    startup_thread = threading.Thread(target=startup_analysis, daemon=True)
+    startup_thread.start()
+    print("✓ Başlangıç analizi kontrol ediliyor...")
+    
+    # Günlük otomatik analiz - Her gün 12:15'te (12:00 verileri hazır olduğunda)
+    def daily_analysis():
         while True:
             try:
-                time.sleep(3600)  # Her saat kontrol et
                 now = datetime.now()
-                if now.hour == 0:  # Gece yarısı
-                    print("🕛 Günlük cache temizleme başlatılıyor...")
-                    clear_expired_cache()
-                    print("✅ Cache temizleme tamamlandı")
+                # Bir sonraki 12:15'i hesapla
+                next_run = now.replace(hour=12, minute=15, second=0, microsecond=0)
+                if now >= next_run:
+                    next_run += timedelta(days=1)
+                
+                # Bekleme süresi
+                wait_seconds = (next_run - now).total_seconds()
+                print(f"Sonraki otomatik analiz: {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({wait_seconds/3600:.1f} saat sonra)")
+                
+                time.sleep(wait_seconds)
+                
+                print("📊 Günlük analiz başlatılıyor (12:00 verileri)...")
+                analyze_all_areas_backend(force_refresh=True)
+                
             except Exception as e:
-                print(f"Cache temizleme hatası: {e}")
+                print(f"Günlük analiz hatası: {e}")
+                time.sleep(3600)  # Hata durumunda 1 saat bekle
     
-    cleanup_thread = threading.Thread(target=daily_cache_cleanup, daemon=True)
-    cleanup_thread.start()
-    print("✓ Günlük cache temizleme başlatıldı")
-    
-    # Başlangıç analizini garanti et
-    print("✓ Başlangıç analizi başlatılıyor...")
-    analysis_thread = threading.Thread(target=initial_analysis, daemon=True)
-    analysis_thread.start()
-    
-    # Analiz başladığını doğrula
-    time.sleep(0.5)  # 0.5 saniye bekle (azaltıldı)
-    print("✓ Analiz thread başlatıldı")
+    daily_thread = threading.Thread(target=daily_analysis, daemon=True)
+    daily_thread.start()
+    print("✓ Günlük analiz scheduler'ı başlatıldı (Her gün 12:15)")
     
     try:
         # Render için port ayarı
@@ -759,4 +511,4 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\n⚠️ Uygulama kapatılıyor...")
-        auto_updater.stop() 
+        auto_updater.stop()
